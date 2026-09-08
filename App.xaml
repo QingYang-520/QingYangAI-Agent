@@ -1,0 +1,41 @@
+﻿<?xml version = "1.0" encoding = "UTF-8" ?>
+<Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:local="clr-namespace:青阳AI"
+             x:Class="青阳AI.App">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Resources/Styles/Colors.xaml" />
+                <ResourceDictionary Source="Resources/Styles/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <!-- M3 Expressive 暗色配色方案（备用主题 Custom 系） -->
+            <ResourceDictionary>
+                <Color x:Key="M3Primary">#FBB5B2</Color>
+                <Color x:Key="M3OnPrimary">#5D161C</Color>
+                <Color x:Key="M3PrimaryContainer">#792E31</Color>
+                <Color x:Key="M3OnPrimaryContainer">#FDDAD8</Color>
+                <Color x:Key="M3SecondaryContainer">#5A403F</Color>
+                <Color x:Key="M3OnSecondaryContainer">#FBDBD9</Color>
+                <Color x:Key="M3TertiaryContainer">#52452B</Color>
+                <Color x:Key="M3OnTertiaryContainer">#F3E0C0</Color>
+                <Color x:Key="M3Surface">#181211</Color>
+                <Color x:Key="M3SurfaceContainerLow">#201A1A</Color>
+                <Color x:Key="M3SurfaceContainer">#241E1E</Color>
+                <Color x:Key="M3SurfaceContainerHigh">#2F2928</Color>
+                <Color x:Key="M3SurfaceContainerHighest">#3A3333</Color>
+                <Color x:Key="M3OnSurface">#E9E1E0</Color>
+                <Color x:Key="M3OnSurfaceVariant">#D5C2C1</Color>
+                <Color x:Key="M3Outline">#9E8D8C</Color>
+                <Color x:Key="M3OutlineVariant">#524342</Color>
+                <Color x:Key="M3InverseSurface">#E9E1E0</Color>
+                <Color x:Key="M3InverseOnSurface">#352F2F</Color>
+                <Color x:Key="M3InversePrimary">#944747</Color>
+                <Color x:Key="M3Error">#F2B8B5</Color>
+                <Color x:Key="M3OnError">#601410</Color>
+                <Color x:Key="M3ErrorContainer">#8C1D18</Color>
+                <Color x:Key="M3OnErrorContainer">#F9DEDC</Color>
+            </ResourceDictionary>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

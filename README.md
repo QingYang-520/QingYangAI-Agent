@@ -22,7 +22,7 @@ Technical Advantages
 - Good Compatibility: Supports mainstream large language models, seamlessly adapting to open-source local models and commercial API models.
 Quick Start
 1. Installation
-git clone https://github.com/qingyang3018/QingYangAI-Agent.git
+git clone https://github.com/QingYang-520/QingYangAI-Agent.git
 cd QingYangAI-Agent
 pip install -r requirements.txt
 2. Basic Usage

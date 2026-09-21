@@ -13,7 +13,9 @@ $SourceDir = "D:\project\QIngYangAI"
 $RootDir   = "Z:\git" + [char]0x63D0 + [char]0x4EA4        # Z:\git提交
 
 # ---- 不复制的东西（构建产物 / 工具目录 / SDK / 归档）----
-$SkipDirs = @('bin','obj','.vs','android-sdk','apk','.workbuddy','.workbuddy-ai','.zcode','node_modules','dsh')
+# 注意：.git 里存着 GitHub 访问令牌，绝不进快照
+$SkipDirs = @('bin','obj','.vs','android-sdk','apk','.workbuddy','.workbuddy-ai','.zcode','node_modules','dsh','.git','csproj')
+$SkipFiles = @('_tok.txt')
 
 # ---- 1. 当天目录 年-月-日 ----
 $today  = Get-Date -Format "yyyy-MM-dd"
@@ -38,6 +40,7 @@ New-Item -ItemType Directory -Path $dstDir -Force | Out-Null
 
 Get-ChildItem -LiteralPath $SourceDir -Force | Where-Object {
     if ($SkipDirs -contains $_.Name) { return $false }
+    if (-not $_.PSIsContainer -and $SkipFiles -contains $_.Name) { return $false }
     if (-not $_.PSIsContainer -and $_.Extension -eq '.user') { return $false }
     return $true
 } | ForEach-Object {

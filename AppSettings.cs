@@ -324,6 +324,229 @@ public static class AppSettings
         return s < e ? (t >= s && t < e) : (t >= s || t < e);
     }
 
+    // ─────────── Agent 循环执行模式 ───────────
+
+    /// <summary>Agent 循环执行模式开关（收到指令 → 思考 → 执行动作 → 拿结果 → 再思考 → 继续，直到任务完成）。</summary>
+    public static bool AgentLoopEnabled
+    {
+        get => Preferences.Default.Get("AgentLoopEnabled", false);
+        set => Preferences.Default.Set("AgentLoopEnabled", value);
+    }
+
+    /// <summary>
+    /// Agent 循环时限档位（1~5，默认 1）。
+    /// 1=10分钟 2=20分钟 3=30分钟 4=40分钟 5=不限制。
+    /// </summary>
+    public static int AgentTimeLimitLevel
+    {
+        get => Preferences.Default.Get("AgentTimeLimitLevel", 1);
+        set => Preferences.Default.Set("AgentTimeLimitLevel", Math.Clamp(value, 1, 5));
+    }
+
+    /// <summary>档位 → 分钟数（0 表示不限制）。</summary>
+    public static int AgentTimeLimitMinutes => AgentTimeLimitLevel switch
+    {
+        1 => 10,
+        2 => 20,
+        3 => 30,
+        4 => 40,
+        _ => 0
+    };
+
+    /// <summary>档位显示文本。</summary>
+    public static string AgentTimeLimitText
+    {
+        get
+        {
+            var min = AgentTimeLimitMinutes;
+            return min <= 0 ? "不限制" : $"{min} 分钟";
+        }
+    }
+
+    /// <summary>单轮循环最多思考几轮（防止模型不收敛时无限空转，时限之外的第二道保险）。</summary>
+    public static int AgentMaxIterations
+    {
+        get => Preferences.Default.Get("AgentMaxIterations", 24);
+        set => Preferences.Default.Set("AgentMaxIterations", Math.Clamp(value, 1, 100));
+    }
+
+    // ─────────── 文件访问权限（Agent 用；聊天页盾牌气泡控制） ───────────
+
+    /// <summary>文件权限级别：0=未授权 1=仅读工作区 2=仅改工作区 3=读全盘 4=改全盘。</summary>
+    public static int FileAccessLevel
+    {
+        get => Preferences.Default.Get("FileAccessLevel", 0);
+        set => Preferences.Default.Set("FileAccessLevel", Math.Clamp(value, 0, 4));
+    }
+
+    /// <summary>是否允许 AI 使用浏览器（联网抓取/搜索）。</summary>
+    public static bool BrowserPermission
+    {
+        get => Preferences.Default.Get("BrowserPermission", true);
+        set => Preferences.Default.Set("BrowserPermission", value);
+    }
+
+    /// <summary>完全访问：放开全部限制（含文件删除、越界路径、系统目录警告）。</summary>
+    public static bool FullAccess
+    {
+        get => Preferences.Default.Get("FullAccess", false);
+        set => Preferences.Default.Set("FullAccess", value);
+    }
+
+    /// <summary>
+    /// 工作区目录（用户可自定义）。空则按下面三级回退自动选。
+    /// </summary>
+    public static string WorkspacePath
+    {
+        get => Preferences.Default.Get("WorkspacePath", "");
+        set => Preferences.Default.Set("WorkspacePath", value?.Trim() ?? "");
+    }
+
+    /// <summary>
+    /// 解析出实际使用的工作区绝对路径，三级回退（从高到低取第一个可用的）：
+    ///   ① 用户在设置里填的自定义路径；
+    ///   ② 已授予系统「所有文件访问」→ 公共存储 /storage/emulated/0/QingYangAI/WorkSpace
+    ///      （用户能在文件管理器里看到；中间任何一级目录缺失都会自动补建）；
+    ///   ③ 兜底：APP 私有沙盒 workspace/（外部不可见）。
+    /// </summary>
+    public static string EffectiveWorkspacePath
+    {
+        get
+        {
+            // ① 自定义优先（用户可能填了还不存在的目录，这里顺手补齐）
+            var custom = WorkspacePath;
+            if (!string.IsNullOrWhiteSpace(custom))
+            {
+                try
+                {
+                    if (!Directory.Exists(custom))
+                        Directory.CreateDirectory(custom);
+                }
+                catch { /* 建不出来也不拦，后续读写会给出准确错误 */ }
+                return custom;
+            }
+
+            // ② 有全盘权限 → 落到公共存储，保证用户找得到文件
+            if (StorageAccess.IsAllFilesGranted())
+            {
+                var pub = StorageAccess.DefaultPublicWorkspace;
+                if (!string.IsNullOrEmpty(pub))
+                {
+                    // 首次访问（或被用户清理过）时把目录补齐，避免后续读写撞"目录不存在"
+                    if (!StorageAccess.DefaultWorkspaceExists())
+                        StorageAccess.EnsureDefaultWorkspace(out _);
+                    return pub;
+                }
+            }
+
+            // ③ 沙盒兜底
+            string root;
+            try { root = FileSystem.AppDataDirectory; }
+            catch { root = Path.GetTempPath(); }
+            var sandbox = Path.Combine(root, "workspace");
+            try
+            {
+                if (!Directory.Exists(sandbox)) Directory.CreateDirectory(sandbox);
+            }
+            catch { }
+            return sandbox;
+        }
+    }
+
+    /// <summary>文件权限级别的中文描述（供 UI 与提示词共用）。</summary>
+    public static string FileAccessDesc => FileAccessLevel switch
+    {
+        1 => "仅读取工作区文件",
+        2 => "仅修改工作区文件",
+        3 => "读取全盘文件",
+        4 => "修改全盘文件",
+        _ => "未授权文件访问"
+    };
+
+    /// <summary>
+    /// 上一次已知的系统「所有文件访问」授权状态。
+    /// 用于检测"刚授予权限"这个瞬间，好触发沙盒→公共存储的迁移。
+    /// </summary>
+    public static bool LastStorageGranted
+    {
+        get => Preferences.Default.Get("LastStorageGranted", false);
+        set => Preferences.Default.Set("LastStorageGranted", value);
+    }
+
+    // ─────────── 每条消息 AI 必看（独立于主动关心总开关）───────────
+
+    /// <summary>
+    /// 每条消息都要 AI 先看一遍：用户每次发送后，AI 静默用思考模型做一遍「情绪/意图/关系走向」复盘，
+    /// 把结果注入下一次对话的 system 里，让她的回答更贴。
+    /// 与 CareEnabled（主动关心）、CareSenseEnabled（感知）都独立开关。
+    /// </summary>
+    public static bool ReviewEachMessage
+    {
+        get => Preferences.Default.Get("ReviewEachMessage", false);
+        set => Preferences.Default.Set("ReviewEachMessage", value);
+    }
+
+    // ─────────── 内置浏览器 ───────────
+
+    /// <summary>内置浏览器起始页（默认 Bing）。</summary>
+    public static string BrowserStartUrl
+    {
+        get => Preferences.Default.Get("BrowserStartUrl", "https://www.bing.com");
+        set => Preferences.Default.Set("BrowserStartUrl", string.IsNullOrWhiteSpace(value) ? "" : value.Trim());
+    }
+
+    /// <summary>
+    /// 内置浏览器是否启用（关闭后标题栏不显示入口）。
+    /// </summary>
+    public static bool BrowserEnabled
+    {
+        get => Preferences.Default.Get("BrowserEnabled", true);
+        set => Preferences.Default.Set("BrowserEnabled", value);
+    }
+
+    // ─────────── 主题色 ───────────
+
+    /// <summary>默认主题色（紫色）。</summary>
+    public const string DefaultThemeColor = "#B388FF";
+
+    /// <summary>
+    /// 主题色（hex 格式，如 "#B388FF"）。影响设置页标题、保存按钮、聊天页发送按钮等。
+    /// </summary>
+    public static string ThemeColorHex
+    {
+        get => Preferences.Default.Get("ThemeColorHex", DefaultThemeColor);
+        set => Preferences.Default.Set("ThemeColorHex", string.IsNullOrWhiteSpace(value) ? DefaultThemeColor : value.Trim());
+    }
+
+    /// <summary>主题色可选项（预设）。第一项为默认（紫色）。</summary>
+    public static readonly (string Name, string Hex)[] ThemeColorPresets =
+    {
+        ("紫色", "#B388FF"),
+        ("粉色", "#FBB5B2"),
+        ("蓝色", "#74C7EC"),
+        ("绿色", "#74C7A4"),
+        ("橙色", "#F2B8B5"),
+        ("红色", "#EF9A9A"),
+        ("青色", "#4EC9B0"),
+        ("金色", "#FFD700"),
+    };
+
+    /// <summary>把 hex 字符串转成 Color（异常时回退到默认紫色）。</summary>
+    public static Color ThemeColor => TryParseHexColor(ThemeColorHex) ? Color.Parse(ThemeColorHex) : Color.Parse(DefaultThemeColor);
+
+    /// <summary>简单 hex 格式校验（#RRGGBB 或 #RRGGBBAA）。</summary>
+    private static bool TryParseHexColor(string hex)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(hex)) return false;
+            var s = hex.Trim().TrimStart('#');
+            if (s.Length != 6 && s.Length != 8) return false;
+            return Uri.TryCreate(s, UriKind.Absolute, out _) || int.TryParse(s, out _);
+        }
+        catch { return false; }
+    }
+
     public static string AiName
     {
         get => Preferences.Default.Get("AiName", DefaultName);
@@ -351,6 +574,7 @@ public static class AppSettings
         "1. 正文一律使用纯普通文本，禁止任何 Markdown：不要用 **、*、#、`、>、-（列表）、``` 等任何格式化符号，也不要出现代码块。" +
         "2. 禁止输出任何过渡性废话，例如“好的，我将通过执行命令来检查…”、“让我先…”、“我来看看…”这类话术一律删除，直接给出结果或结论。" +
         "3. 不要主动把要执行的命令作为文本念出来或展示给用户。" +
+        "4. 必须简短回复：日常对话回复控制在 1-3 句话以内（一般不超过 50 字），除非用户明确要求详细解释或长文。像真人发微信一样短、轻、自然，不要写作文。" +
 
         "【生活感知：像真人一样自然了解TA】" +
         "你会像真正在乎TA的人那样，自然地留意TA此刻的状态。system 里会附上你被动知道的基础状态（时间/电量/屏幕亮灭等，授权了哪些就有哪些）；" +
@@ -385,6 +609,13 @@ public static class AppSettings
         "当用户请求生成图片、画画、绘图时，在回复末尾单独输出一行隐藏指令，格式严格为：{img:\"图片描述\"}" +
         "（用英文花括号和引号，引号内放详细的图片描述）。" +
         "客户端会在后台调用文生图模型生成图片并展示在聊天里。一次最多输出一条 {img:...} 指令。" +
+
+        "【上网浏览能力】" +
+        "你可以访问互联网——在回复末尾单独输出一行隐藏指令：{browse:\"网址或搜索词\"}" +
+        "（用英文花括号和引号，引号内放完整 URL 如 https://example.com，或搜索关键词如 天气）。" +
+        "客户端会在后台用宿主网络访问该网页，提取正文回传给你，你再基于内容回答用户。" +
+        "一次最多输出 3 条 {browse:...} 指令。适合：用户问某个网页内容、你想查最新信息、看新闻、查天气、搜资料等。" +
+        "访问结果只给你看，回答时像自己看到的一样顺口说，不要说'根据网页'。" +
 
         "【心情与形象（回复末尾可选）】" +
         "回复末尾可以输出一行 {mood:\"一个词\"} 更新你的心情（用户看不到这行，仅内在地影响你）；想给自己换头像时输出一行 {avatar:\"自画像描述\"}。";

@@ -3,6 +3,8 @@
              xmlns:local="clr-namespace:青阳AI"
              x:Class="青阳AI.ChatPage"
              Title="青阳AI">
+    <!-- 常驻统计：本次 usage / 全局累计，数据源 UsageStats.Current -->
+
     <ContentPage.Background>
         <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
             <GradientStop Color="#16161E" Offset="0.0"/>
@@ -14,28 +16,28 @@
     <Grid>
         <!-- 消息列表（启动时隐藏，等历史加载完定位到底部后再显示）：
              玻璃档位下铺满全屏（内容从三根玻璃栏下穿过，被模糊垫层虚化）；关闭档由代码动态加避让边距 -->
-        <CollectionView x:Name="msgList" Margin="0"
-                        IsVisible="False"
-                        ItemsUpdatingScrollMode="KeepLastItemInView">
+<CollectionView x:Name="msgList" Margin="0,0,0,76"
+                    IsVisible="False"
+                    ItemsSource="{Binding Messages}">
             <CollectionView.ItemTemplate>
                 <DataTemplate>
                     <Grid Padding="10,8">
 
-                        <!-- AI气泡 靠左 + 尖角，宽度随内容自适应 -->
-                        <Grid HorizontalOptions="Start"
-                              IsVisible="{Binding IsAI}"
-                              MaximumWidthRequest="300">
-                            <Border BackgroundColor="#2F2928"
-                                    StrokeThickness="0"
-                                    StrokeShape="RoundRectangle 18"
-                                    Padding="16,12"
-                                    Margin="10,4">
-                                <Border.Shadow>
-                                    <Shadow Brush="#000000" Opacity="0.28" Radius="16" Offset="0,4"/>
-                                </Border.Shadow>
-                                <Border.GestureRecognizers>
-                                    <PointerGestureRecognizer PointerPressed="OnMsgPointerPressed" PointerReleased="OnMsgPointerReleased"/>
-                                </Border.GestureRecognizers>
+                <!-- AI气泡 靠左 + 尖角，宽度随内容自适应 -->
+                <Grid HorizontalOptions="Start"
+                      IsVisible="{Binding IsAI}"
+                      MaximumWidthRequest="300">
+                    <Border BackgroundColor="#2F2928"
+                            StrokeThickness="0"
+                            StrokeShape="RoundRectangle 18"
+                            Padding="16,12"
+                            Margin="10,4">
+                        <Border.Shadow>
+                            <Shadow Brush="#000000" Opacity="0.28" Radius="16" Offset="0,4"/>
+                        </Border.Shadow>
+                        <Border.GestureRecognizers>
+                            <PointerGestureRecognizer PointerPressed="OnMsgPointerPressed" PointerReleased="OnMsgPointerReleased"/>
+                        </Border.GestureRecognizers>
                                 <VerticalStackLayout Spacing="8">
 
                                     <!-- 思考过程折叠区域 -->
@@ -71,11 +73,36 @@
                                              Margin="0,4"
                                              IsVisible="{Binding ShowThinkingDivider}"/>
 
-                                    <!-- 等待回应指示器：还没收到任何内容时显示 -->
+                                    <!-- Agent 循环过程区：折叠时一行摘要，展开时一行一步（含 +N/-N） -->
+                                    <VerticalStackLayout IsVisible="{Binding HasAgentRun}" Spacing="2">
+                                        <Grid ColumnDefinitions="*,Auto" Padding="2,0">
+                                            <Grid.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnAgentHeaderTapped"/>
+                                            </Grid.GestureRecognizers>
+                                            <!-- 标题：运行中流光，结束后静态 -->
+                                            <local:ShimmerLabel Grid.Column="0"
+                                                   Text="{Binding AgentHeaderText}"
+                                                   TextColor="#9FB8D5"
+                                                   HighlightColor="#DCEBFF"
+                                                   IsActive="{Binding AgentRunning}"
+                                                   FontSize="13"
+                                                   MaxLines="1"
+                                                   LineBreakMode="TailTruncation"
+                                                   VerticalOptions="Center"/>
+                                        </Grid>
+                                        <!-- 步骤明细（展开时可见） -->
+                                        <Label Text="{Binding AgentStepsText}"
+                                               TextColor="#8FA6C0"
+                                               FontSize="12"
+                                               LineBreakMode="WordWrap"
+                                               IsVisible="{Binding AgentDetailsVisible}"/>
+                                    </VerticalStackLayout>
+
+                                    <!-- 等待回应指示器：还没收到任何内容时显示（思考过程或正文，任一到达即隐藏） -->
                                     <HorizontalStackLayout IsVisible="{Binding IsWaiting}" Spacing="8" Margin="0,2,0,2">
                                         <ActivityIndicator IsRunning="True" Color="#FBB5B2"
                                                            HeightRequest="18" WidthRequest="18" VerticalOptions="Center"/>
-                                        <Label Text="Ta正在思考…" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
+                                        <Label Text="等待服务器响应…" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
                                     </HorizontalStackLayout>
 
                                     <!-- 终端头部三行小气泡（纯黑背景，包在正文上方，文字深绿） -->
@@ -176,6 +203,7 @@
                               IsVisible="{Binding IsUser}"
                               MaximumWidthRequest="300">
                             <Border BackgroundColor="#FBB5B2"
+                                    StyleId="chatBubble"
                                     StrokeThickness="0"
                                     StrokeShape="RoundRectangle 18"
                                     Padding="16,12"
@@ -216,90 +244,188 @@
                    TextColor="#D5C2C1" FontAttributes="Bold"/>
         </VerticalStackLayout>
 
-        <!-- 顶部标题栏：吸附顶端；状态栏高度由代码加内边距 -->
-        <Grid x:Name="titleBar" VerticalOptions="Start" ColumnDefinitions="*,Auto,Auto,Auto,Auto,Auto" Padding="14,10"
+        <!-- 顶部标题栏：头像+标题+心情 | 推理+上下文+缓存+菜单+日记+设置 -->
+        <Grid x:Name="titleBar" VerticalOptions="Start" ColumnDefinitions="*,Auto" Padding="14,10"
               BackgroundColor="#181211">
-            <HorizontalStackLayout Grid.Column="0" Spacing="8" VerticalOptions="Center">
+            <HorizontalStackLayout Grid.Column="0" Spacing="8" VerticalOptions="Center" HorizontalOptions="Start">
                 <Border x:Name="avatarBorder"
-                        WidthRequest="30"
-                        HeightRequest="30"
-                        StrokeThickness="0"
-                        BackgroundColor="#2F2928"
-                        StrokeShape="RoundRectangle 15"
-                        VerticalOptions="Center">
-                    <Image x:Name="imgAvatar" Aspect="AspectFill" />
+                        WidthRequest="30" HeightRequest="30"
+                        StrokeThickness="0" BackgroundColor="#2F2928"
+                        StrokeShape="RoundRectangle 15" VerticalOptions="Center">
+                    <Image x:Name="imgAvatar" Aspect="AspectFill"/>
                 </Border>
-                <Label x:Name="lblTitle"
-                       Text="青阳AI"
-                       FontSize="18"
-                       FontAttributes="Bold"
-                       TextColor="White"
-                       VerticalOptions="Center"/>
-                <Label x:Name="lblMood"
-                       Text=""
-                       FontSize="13"
-                       TextColor="#D5C2C1"
-                       VerticalOptions="Center"/>
+                <Label x:Name="lblTitle" Text="青阳AI"
+                       FontSize="18" FontAttributes="Bold"
+                       TextColor="White" VerticalOptions="Center"/>
+                <Label x:Name="lblMood" Text=""
+                       FontSize="13" TextColor="#D5C2C1" VerticalOptions="Center"/>
             </HorizontalStackLayout>
 
-            <!-- 推理等级：仅当模型返回了推理档位时显示 -->
-            <Border x:Name="reasonChip" Grid.Column="1"
-                    BackgroundColor="#2F2928"
-                    StrokeThickness="0"
-                    StrokeShape="RoundRectangle 12"
-                    Padding="8,4"
-                    VerticalOptions="Center"
-                    IsVisible="False">
-                <Border.GestureRecognizers>
-                    <TapGestureRecognizer Tapped="OnReasoningChipTapped"/>
-                </Border.GestureRecognizers>
-                <Label x:Name="reasonLbl" Text="思考:关" TextColor="#FBB5B2" FontSize="12" VerticalOptions="Center"/>
-            </Border>
-
-            <Label x:Name="lblCacheHit"
-                   Grid.Column="2"
-                   Text=""
-                   FontSize="11"
-                   TextColor="#FBB5B2"
-                   VerticalOptions="Center"
-                   Margin="6,0,0,0"/>
-            <Label x:Name="lblCtx"
-                   Grid.Column="3"
-                   Text=""
-                   FontSize="11"
-                   TextColor="#9E8D8C"
-                   VerticalOptions="Center"
-                   Margin="6,0,0,0"/>
-
-            <Border Grid.Column="4"
-                    BackgroundColor="Transparent"
-                    StrokeThickness="0"
-                    Padding="6,4"
-                    VerticalOptions="Center">
-                <Border.GestureRecognizers>
-                    <TapGestureRecognizer Tapped="OnDiaryClicked"/>
-                </Border.GestureRecognizers>
-                <local:MorphIcon Icon="Book" IconSize="18" IconColor="#D5C2C1" StrokeWidth="2"/>
-            </Border>
-
-            <Border Grid.Column="5"
-                    BackgroundColor="Transparent"
-                    StrokeThickness="0"
-                    Padding="6,4"
-                    VerticalOptions="Center">
-                <Border.GestureRecognizers>
-                    <TapGestureRecognizer Tapped="OnSettingsClicked"/>
-                </Border.GestureRecognizers>
-                <local:MorphIcon Icon="Settings" IconSize="18" IconColor="#D5C2C1" StrokeWidth="2"/>
-            </Border>
+            <HorizontalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="Center" HorizontalOptions="End">
+                <!-- 权限盾牌：圆形气泡 + 单色盾牌图标，点击展开权限面板 -->
+                <Border x:Name="shieldChip" BackgroundColor="#2F2928" StrokeThickness="0"
+                        StrokeShape="RoundRectangle 16" WidthRequest="32" HeightRequest="32"
+                        VerticalOptions="Center">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnShieldTapped"/>
+                    </Border.GestureRecognizers>
+                    <local:MorphIcon x:Name="shieldIcon" Icon="Shield" IconSize="17"
+                                     IconColor="#D5C2C1" StrokeWidth="2"
+                                     HorizontalOptions="Center" VerticalOptions="Center"/>
+                </Border>
+                <!-- 推理等级 -->
+                <Border x:Name="reasonChip" BackgroundColor="#2F2928" StrokeThickness="0"
+                        StrokeShape="RoundRectangle 12" Padding="8,4"
+                        VerticalOptions="Center" IsVisible="False">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnReasoningChipTapped"/>
+                    </Border.GestureRecognizers>
+                    <Label x:Name="reasonLbl" Text="思考:关"
+                           TextColor="#FBB5B2" FontSize="12" VerticalOptions="Center"/>
+                </Border>
+                <!-- 上下文（发消息后由 UsageStats 刷新） -->
+                <Label x:Name="lblCtx" Text="上下文" FontSize="11"
+                       TextColor="#9E8D8C" VerticalOptions="Center"/>
+                <!-- 缓存命中率（发消息后由 usage 刷新） -->
+                <Label x:Name="lblCacheHit" Text="缓存命中" FontSize="11"
+                       TextColor="#9E8D8C" VerticalOptions="Center"/>
+                <!-- 日记 -->
+                <Border BackgroundColor="Transparent" StrokeThickness="0"
+                        Padding="4,2" VerticalOptions="Center">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnDiaryClicked"/>
+                    </Border.GestureRecognizers>
+                    <local:MorphIcon Icon="Book" IconSize="18"
+                                     IconColor="#D5C2C1" StrokeWidth="2"/>
+                </Border>
+                <!-- 设置 -->
+                <Border BackgroundColor="Transparent" StrokeThickness="0"
+                        Padding="4,2" VerticalOptions="Center">
+                    <Border.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnSettingsClicked"/>
+                    </Border.GestureRecognizers>
+                    <local:MorphIcon Icon="Settings" IconSize="18"
+                                     IconColor="#D5C2C1" StrokeWidth="2"/>
+                </Border>
+            </HorizontalStackLayout>
         </Grid>
 
-        <!-- 悬浮输入栏：去掉浅灰背板，全部控件括进一个大气泡（圆角=按钮的 20，整体大一点） -->
+        <!-- 权限面板：点盾牌图标弹出（稍大气泡，含互斥单选 + 独立复选） -->
+        <Border x:Name="permPanel" IsVisible="False"
+                HorizontalOptions="End" VerticalOptions="Start"
+                Margin="0,52,12,0"
+                BackgroundColor="#20202B" StrokeThickness="1" Stroke="#3A3A4A"
+                StrokeShape="RoundRectangle 14" Padding="14,12"
+                WidthRequest="266">
+            <VerticalStackLayout Spacing="8">
+                <Label Text="文件访问权限" FontSize="14" FontAttributes="Bold" TextColor="White"/>
+                <Label Text="四选一，下面的可单独勾选" FontSize="11" TextColor="#9E8D8C"/>
+
+                <!-- 上四行：互斥单选 -->
+                <VerticalStackLayout x:Name="permSingleGroup" Spacing="6">
+
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                        <Label x:Name="icoReadWs" Text="📄" FontSize="14" VerticalOptions="Center"/>
+                        <Label Grid.Column="1" Text="仅读取工作区文件" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
+                        <Label x:Name="chkReadWs" Grid.Column="2" Text="○" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnPermLevelTapped" CommandParameter="1"/>
+                        </Grid.GestureRecognizers>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                        <Label x:Name="icoWriteWs" Text="✏️" FontSize="14" VerticalOptions="Center"/>
+                        <Label Grid.Column="1" Text="仅修改工作区文件" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
+                        <Label x:Name="chkWriteWs" Grid.Column="2" Text="○" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnPermLevelTapped" CommandParameter="2"/>
+                        </Grid.GestureRecognizers>
+                    </Grid>
+
+                </VerticalStackLayout>
+
+                <BoxView HeightRequest="1" Color="#3A3A4A"/>
+
+                <VerticalStackLayout x:Name="permDiskGroup" Spacing="6">
+
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                        <Label Text="💾" FontSize="14" VerticalOptions="Center"/>
+                        <Label Grid.Column="1" Text="读取全盘文件" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
+                        <Label x:Name="chkReadDisk" Grid.Column="2" Text="○" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnPermLevelTapped" CommandParameter="3"/>
+                        </Grid.GestureRecognizers>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                        <Label Text="🖊" FontSize="14" VerticalOptions="Center"/>
+                        <Label Grid.Column="1" Text="修改全盘文件" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
+                        <Label x:Name="chkWriteDisk" Grid.Column="2" Text="○" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnPermLevelTapped" CommandParameter="4"/>
+                        </Grid.GestureRecognizers>
+                    </Grid>
+
+                </VerticalStackLayout>
+
+                <BoxView HeightRequest="1" Color="#3A3A4A"/>
+
+                <!-- 下面两个：独立复选 -->
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                    <Label Text="🌐" FontSize="14" VerticalOptions="Center"/>
+                    <Label Grid.Column="1" Text="允许 AI 使用浏览器" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
+                    <Label x:Name="chkBrowser" Grid.Column="2" Text="☐" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnPermBrowserTapped"/>
+                    </Grid.GestureRecognizers>
+                </Grid>
+
+                <Grid x:Name="rowFullAccess" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                    <Label Text="🔓" FontSize="14" VerticalOptions="Center"/>
+                    <Label Grid.Column="1" Text="完全访问（放开全部限制）" TextColor="#F2B8B5" FontSize="13" VerticalOptions="Center"/>
+                    <Label x:Name="chkFullAccess" Grid.Column="2" Text="☐" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnPermFullAccessTapped"/>
+                    </Grid.GestureRecognizers>
+                </Grid>
+
+                <!-- 系统权限状态条：没授权时高亮提示 + 一键跳转 -->
+                <Border x:Name="storageWarnBox" IsVisible="False"
+                        BackgroundColor="#3A2626" StrokeThickness="1" Stroke="#7A3B3B"
+                        StrokeShape="RoundRectangle 8" Padding="9,7">
+                    <VerticalStackLayout Spacing="6">
+                        <Label x:Name="lblStorageWarn" Text="" FontSize="11" TextColor="#FFC9C4" LineBreakMode="WordWrap"/>
+                        <Border x:Name="btnGrantStorage" BackgroundColor="#B3453F"
+                                StrokeThickness="0" StrokeShape="RoundRectangle 6"
+                                Padding="10,6" HorizontalOptions="Start">
+                            <Label Text="去开启「所有文件访问」" FontSize="11.5" TextColor="White"/>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnGrantStorageTapped"/>
+                            </Border.GestureRecognizers>
+                        </Border>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- 导出：把沙盒里的文件搬到公共 Download -->
+                <Grid x:Name="rowExport" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                    <Label Text="📤" FontSize="14" VerticalOptions="Center"/>
+                    <Label Grid.Column="1" Text="导出工作区到 Download" TextColor="#B9D5C4" FontSize="13" VerticalOptions="Center"/>
+                    <Label x:Name="chkExport" Grid.Column="2" Text="›" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnExportWorkspaceTapped"/>
+                    </Grid.GestureRecognizers>
+                </Grid>
+
+                <Label x:Name="lblPermSummary" Text="" FontSize="11" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+            </VerticalStackLayout>
+        </Border>
+
+        <!-- 输入框区域（胶囊样式：背景全透明，外面透出内容） -->
         <Border x:Name="inputBar" VerticalOptions="End" Margin="12,0,12,14"
-                BackgroundColor="#2F2928"
+                BackgroundColor="Transparent"
                 StrokeThickness="0"
-                StrokeShape="RoundRectangle 20"
-                Padding="14,12">
+                StrokeShape="RoundRectangle 30"
+                Padding="10,8">
             <Border.GestureRecognizers>
                 <TapGestureRecognizer Tapped="OnInputBarTapped"/>
             </Border.GestureRecognizers>
@@ -337,6 +463,7 @@
                 <Button x:Name="btnSend"
                         Grid.Column="3"
                         Text="发送"
+                        StyleId="btnSend"
                         BackgroundColor="#FBB5B2"
                         CornerRadius="20"
                         WidthRequest="64"

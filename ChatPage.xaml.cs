@@ -1,10 +1,13 @@
-using Microsoft.Maui.Controls;
+﻿using Microsoft.Maui.Controls;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Maui.Controls.Xaml;
+using Microsoft.Maui.Controls.Internals;
+using Microsoft.Maui.Controls;
 
 namespace 青阳AI;
 
@@ -22,11 +25,14 @@ public partial class ChatPage : ContentPage
 
     public ChatPage()
     {
-        InitializeComponent();
+InitializeComponent();
         NavigationPage.SetHasNavigationBar(this, false);
         Messages = new ObservableCollection<ChatMsg>();
+        BindingContext = this;
         msgList.Scrolled += OnMsgListScrolled;
+        msgList.Loaded += OnMsgListLoaded;
         btnSend.Clicked += SendClick;
+        imgAvatar.Source = AvatarService.Load();
         ApplyApiKey();
         _ = InitAsync();
     }
@@ -40,7 +46,7 @@ public partial class ChatPage : ContentPage
     private string _motto = "";
 
     /// <summary>更新空状态：无消息时屏幕正中央显示随机语句，有消息时隐藏。</summary>
-    private void UpdateEmptyState()
+    public void UpdateEmptyState()
     {
         bool empty = Messages.Count == 0;
         emptyState.IsVisible = empty;
@@ -48,180 +54,323 @@ public partial class ChatPage : ContentPage
     }
 
     /// <summary>字号自适应：六个字至少占屏幕宽度的 3/4。</summary>
-    protected override void OnSizeAllocated(double width, double height)
+    #if ANDROID
+    private void OnMsgListScrolled(object? sender, ItemsViewScrolledEventArgs e)
     {
-        base.OnSizeAllocated(width, height);
-        if (width > 0)
-            emptyMotto.FontSize = Math.Max(30, Math.Min(72, width * 0.75 / 6.0));
+        // 用户手动上滑后停止自动跟随底部
+        if (e.LastVisibleItemIndex < Messages.Count - 2)
+            _followBottom = false;
+    }
+#else
+    private void OnMsgListScrolled(object? sender, EventArgs e)
+    {
+        // Windows 平台不需要滚动事件处理
+    }
+#endif
+
+    /// <summary>消息长按开始：记录时间和目标消息。</summary>
+    private void OnMsgPointerPressed(object? sender, PointerEventArgs e)
+    {
+        if (sender is BindableObject bo && bo.BindingContext is ChatMsg msg)
+        {
+            _pressTime = DateTime.Now;
+            _pressedMsg = msg;
+        }
     }
 
-    /// <summary>启动时从 SQLite 加载聊天记录并刷新上下文状态。</summary>
+    /// <summary>消息长按结束：超过阈值则弹出操作菜单。</summary>
+    private async void OnMsgPointerReleased(object? sender, PointerEventArgs e)
+    {
+        if (_pressedMsg == null) return;
+        var elapsed = (DateTime.Now - _pressTime).TotalMilliseconds;
+        var msg = _pressedMsg;
+        _pressedMsg = null;
+
+        if (elapsed < LongPressMs) return;
+
+        // 长按：复制或删除
+        var action = await DisplayActionSheet("消息操作", "取消", "删除", "复制文字");
+        if (action == "复制文字" && !string.IsNullOrEmpty(msg.Content))
+            await Clipboard.Default.SetTextAsync(msg.Content);
+        else if (action == "删除")
+        {
+            Messages.Remove(msg);
+            await ChatStore.Instance.DeleteMessagesAsync(new[] { msg.Id });
+        }
+    }
+
+    /// <summary>隐藏软键盘（Android 专用）。</summary>
+#if ANDROID
+    private void HideKeyboard()
+    {
+        var window = Platform.CurrentActivity?.Window;
+        if (window != null)
+        {
+            var imm = Platform.CurrentActivity?.GetSystemService("input_method") as Android.Views.InputMethods.InputMethodManager;
+            var view = window.DecorView.RootView;
+            imm?.HideSoftInputFromWindow(view.WindowToken, 0);
+        }
+    }
+#else
+    private void HideKeyboard() { }
+#endif
+
+    /// <summary>滚动到底部（如果 _followBottom=true）。</summary>
+    private void ScrollToBottom()
+    {
+        if (_followBottom && Messages.Count > 0)
+            msgList.ScrollTo(Messages.Count - 1, position: ScrollToPosition.End, animate: false);
+    }
+
+    /// <summary>CollectionView 首次布局完成后再定位底部；Loaded 后渲染已就绪，滚动一次即到位。</summary>
+    private void OnMsgListLoaded(object? sender, EventArgs e)
+    {
+        if (Messages.Count == 0) return;
+        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(100), () =>
+        {
+            msgList.ScrollTo(Messages.Count - 1, position: ScrollToPosition.End, animate: false);
+        });
+    }
+
+    /// <summary>必要时跟随到底部（防消息发送时被用户手动上滑干扰）。</summary>
+    private void FollowBottomIfNeeded()
+    {
+        if (_followBottom) ScrollToBottom();
+    }
+
+    /// <summary>首次加载（异步，不阻塞构造）。</summary>
     private async Task InitAsync()
     {
+        // 列表立即显示（XAML 初始 IsVisible=False，这里第一时间打开，避免整页空白）
+        msgList.IsVisible = true;
         try
         {
-            var loaded = await ChatStore.Instance.LoadMessagesAsync();
-            foreach (var m in loaded)
-                Messages.Add(m);
+            await LoadHistoryAsync();
+#if ANDROID
+            _deviceContext = await DeviceContextService.BuildAsync();
+            _memoryContext = await MemoryService.GetMemoryContextAsync();
+            _diaryContext = await DiaryService.GetLatestDiaryContextAsync();
+            _innerContext = InnerLifeService.BuildInnerContext();
+            _observedContext = CareWatch.BuildObservedContext();
+#endif
+            _reviewContext = MessageReviewService.BuildReviewContext();
         }
-        catch { /* 数据库异常时从空聊天开始 */ }
-
-        // 空状态：随机抽一句挂屏幕正中央（每次打开应用重新抽）
-        _motto = EmptyMottos[Random.Shared.Next(EmptyMottos.Length)];
-        UpdateEmptyState();
-        UpdateContextLabel();
-
-        // 一次性绑定消息源，并在列表可见前无动画定位到底部（多阶段兜底）——
-        // 冷启动直接看到最后一屏，而不是"从上面滚下来"
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Init] {ex.Message}"); }
         _historyLoaded = true;
-        msgList.ItemsSource = Messages;
-        ScrollToBottomInstant();
-        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(60), ScrollToBottomInstant);
-        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(200), () =>
+        UpdateEmptyState();
+        // 兜底：列表显示后再异步滚一次（Loaded 事件也可能触发，重复也无害，无动画）
+        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(250), () =>
         {
-            ScrollToBottomInstant();
-            msgList.IsVisible = true;
+            if (Messages.Count > 0)
+                msgList.ScrollTo(Messages.Count - 1, position: ScrollToPosition.End, animate: false);
         });
-        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(600), ScrollToBottomInstant);
-
-        // 记忆/日记/内心上下文（供 BuildHistoryMessages 注入）；有更新时自动刷新
-        MemoryService.MemoriesChanged += OnMemoriesChanged;
-        InnerLifeService.StateChanged += OnInnerStateChanged;
         UpdateMoodUi();
         UpdateReasoningChip();
-        imgAvatar.Source = AvatarService.Load();
-        ApplyGlass();
-        ShowLastCrashOnce();
-        _ = RefreshContextsAsync();
-        _ = DiaryService.CheckYesterdayDiaryAsync();
+        ApplyThemeColor();
     }
 
-    /// <summary>上次有闪退的话，打开聊天页时展示一次并清除（把内容发给开发即可定位）。</summary>
-    private async Task ShowLastCrashOnce()
+    protected override async void OnAppearing()
+    {
+        base.OnAppearing();
+        try
+        {
+            // 无论 InitAsync 是否完成，列表都保持可见（首次由 InitAsync 负责加载历史）
+            msgList.IsVisible = true;
+            if (_historyLoaded)
+            {
+#if ANDROID
+                _deviceContext = await DeviceContextService.BuildAsync();
+                _observedContext = CareWatch.BuildObservedContext();
+#endif
+                await SyncNewFromDbAsync();
+            }
+            UpdateContextLabel();
+            UpdateCacheHitLabel();
+            UpdateMoodUi();
+            UpdateReasoningChip();
+            ApplyThemeColor();
+
+            // 从系统设置回来后重新校验存储权限（用户可能刚授予、也可能收回了）
+            await RevalidateStoragePermissionAsync();
+            if (permPanel.IsVisible) RefreshPermPanel();
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[OnAppearing] {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// 每次回到页面时校验系统存储权限，防止出现"APP 里显示已授权、系统里其实没有"的假放开。
+    /// - 刚授予：把沙盒里的旧工作区文件搬到公共存储，避免"一授权文件就消失"；
+    /// - 被收回：自动降级文件权限级别。
+    /// </summary>
+    private async Task RevalidateStoragePermissionAsync()
     {
         try
         {
-            var crash = Preferences.Default.Get("LastCrash", "");
-            if (string.IsNullOrWhiteSpace(crash)) return;
-            Preferences.Default.Set("LastCrash", "");
-            await DisplayAlert("上次闪退信息（请截图/复制发我）", crash, "知道了");
+            bool granted = StorageAccess.IsAllFilesGranted();
+            bool wasGranted = AppSettings.LastStorageGranted;
+
+            if (granted && !wasGranted)
+            {
+                AppSettings.LastStorageGranted = true;
+                var (ok, msg) = await StorageAccess.MigrateSandboxToPublicAsync();
+                if (ok)
+                    await DisplayAlert("工作区已迁移",
+                        msg + "\n\n以后 Ta 生成的文件会直接放在这里，你在文件管理器里能直接看到。", "好");
+            }
+            else if (granted != wasGranted)
+            {
+                AppSettings.LastStorageGranted = granted;
+            }
+
+            if (granted) return;
+
+            // —— 权限不存在（或已被收回）：降级，避免"假放开" ——
+            bool changed = false;
+            if (AppSettings.FileAccessLevel >= 3)
+            {
+                AppSettings.FileAccessLevel = 2;   // 3/4 都依赖系统权限，降为「仅修改工作区」
+                changed = true;
+            }
+            if (AppSettings.FullAccess)
+            {
+                AppSettings.FullAccess = false;
+                changed = true;
+            }
+            if (changed)
+                System.Diagnostics.Debug.WriteLine("[Storage] 系统权限已失效，文件权限自动降级");
         }
         catch { }
     }
 
-    private async Task RefreshContextsAsync()
-    {
-        _memoryContext = await MemoryService.GetMemoryContextAsync();
-        _diaryContext = await DiaryService.GetLatestDiaryContextAsync();
-        _deviceContext = await DeviceContextService.BuildAsync();
-        _innerContext = InnerLifeService.BuildInnerContext();
-        _observedContext = CareWatch.BuildObservedContext();
-        UpdateContextLabel();
-    }
-
-    private async void OnMemoriesChanged() => await RefreshContextsAsync();
-
-    /// <summary>内心状态（心情/心里话）变化：刷新标题栏表情与注入上下文。</summary>
-    private void OnInnerStateChanged()
-    {
-        UpdateMoodUi();
-        _ = RefreshContextsAsync();
-    }
-
-    private void UpdateMoodUi() => lblMood.Text = InnerLifeService.MoodEmoji(InnerLifeService.Mood);
-
-    /// <summary>页面出现时无动画直接定位到最后一条消息（不先显示顶端再滚下来）。</summary>
-    protected override void OnAppearing()
-    {
-        base.OnAppearing();
-        if (!_historyLoaded) return; // 冷启动首屏由 InitAsync 负责定位，避免与加载竞态
-
-        // 回到前台：定位到底部 + 同步后台主动发来的新消息 + 刷新上下文
-        ApplyApiKey();                            // 设置页可能改了 Key（修复旧版"要再进出一次才生效"）
-        imgAvatar.Source = AvatarService.Load();  // 设置页可能新生成了头像
-        UpdateReasoningChip();                    // 配置套可能切换，推理能力随当前模型变化
-        ApplyGlass();                             // 画质选择可能变化
-        ScrollToBottomInstant();
-        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(50), ScrollToBottomInstant);
-        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(200), ScrollToBottomInstant);
-        _ = SyncNewFromDbAsync();
-        _ = RefreshContextsAsync();
-    }
-
-    /// <summary>离开页面：停止语音播放。</summary>
-    protected override void OnDisappearing()
-    {
-        base.OnDisappearing();
-        TtsPlayer.Stop();
-    }
-
-    /// <summary>把数据库里比界面更新（Id 更大）的消息补进来（后台主动关心消息场景）。</summary>
+    /// <summary>增量同步数据库中的新消息（后台主动消息等）。</summary>
     private async Task SyncNewFromDbAsync()
     {
         try
         {
-            int maxKnown = Messages.Count > 0 ? Messages.Max(m => m.Id) : 0;
-            var fresh = await ChatStore.Instance.GetMessagesAfterAsync(maxKnown);
-            if (fresh.Count == 0) return;
-            foreach (var m in fresh)
-                Messages.Add(m);
-            UpdateEmptyState();
-            ScrollToBottom();
-            UpdateContextLabel();
+            var all = await ChatStore.Instance.LoadMessagesAsync();
+            var existingIds = new HashSet<int>(Messages.Select(m => m.Id));
+            foreach (var msg in all)
+            {
+                if (!existingIds.Contains(msg.Id))
+                    Messages.Add(msg);
+            }
+            if (Messages.Count > 0) ScrollToBottom();
         }
         catch { }
     }
 
-    /// <summary>清空聊天数据：删除数据库消息并回到空状态语句（供设置页调用）。</summary>
-    public async Task ClearMessages()
+    /// <summary>加载历史消息（SQLite，异步）。</summary>
+    private async Task LoadHistoryAsync()
     {
-        Messages.Clear();
-        try { await ChatStore.Instance.ClearMessagesAsync(); } catch { }
-        UpdateEmptyState();
-        UpdateContextLabel();
-    }
-
-    /// <summary>
-    /// 更精确的 token 估算：按常见中英混合加权。
-    /// 中文/全角字符按 1 字≈1 token（略保守加系数 0.1），
-    /// 英文/数字/空格按 4 字符≈1 token（0.25/字符）。
-    /// 仅作界面使用上下文参考，非 API 精确值。
-    /// </summary>
-    private int EstimateTokens()
-    {
-        long chars = 0;
-        foreach (var m in Messages) chars += m.Content?.Length ?? 0;
-        chars += AppSettings.BuildSystemPrompt().Length;
-        chars += _memoryContext.Length + _diaryContext.Length + _deviceContext.Length + _innerContext.Length + _observedContext.Length;
-
-        // 无法区分具体字符时，用混合加权：假设约 1/3 为中文字符、2/3 为其它
-        // 中文 1 字≈1.1 token，其它 4 字符≈1 token
-        double tokens = 0;
-        tokens += chars * (1.0 / 3.0) * 1.1;       // 中文字符占比 1/3
-        tokens += chars * (2.0 / 3.0) * 0.25;      // 其余字符占比 2/3
-        return (int)Math.Round(tokens) + 32;       // 基础头信息附加
-    }
-
-    /// <summary>刷新标题栏「当前使用上下文/最高上下文」显示（人性化格式：整数/K/M）。</summary>
-    private void UpdateContextLabel()
-    {
-        int used = EstimateTokens();
-        int max = AppSettings.EffectiveMaxTokens;
-        int pct = max > 0 ? (int)Math.Round(used * 100.0 / max) : 0;
-        lblCtx.Text = $"上下文 {AppSettings.FormatTokens(used)}/{AppSettings.FormatTokens(max)} · {pct}%";
-    }
-
-    /// <summary>刷新标题栏「缓存命中 xx%」：命中 token / (命中+未命中)。无数据时显示占位。</summary>
-    private void UpdateCacheHitLabel()
-    {
-        long total = (long)_lastCacheHit + _lastCacheMiss;
-        if (total <= 0)
+        var loaded = await ChatStore.Instance.LoadMessagesAsync();
+        foreach (var msg in loaded) Messages.Add(msg);
+        #if ANDROID
+        // 初始化感知上下文（异步不阻塞）
+        _ = Task.Run(async () =>
         {
-            lblCacheHit.Text = "缓存命中 --";
+            _deviceContext = await DeviceContextService.BuildAsync();
+            _memoryContext = await MemoryService.GetMemoryContextAsync();
+            _diaryContext = await DiaryService.GetLatestDiaryContextAsync();
+            _innerContext = InnerLifeService.BuildInnerContext();
+            _observedContext = CareWatch.BuildObservedContext();
+            UpdateMoodUi();
+            UpdateReasoningChip();
+            ApplyThemeColor();
+        });
+#endif
+    }
+
+    /// <summary>刷新心情显示（直接读取 InnerLifeService.Mood）。</summary>
+    private void UpdateMoodUi()
+    {
+        try
+        {
+            var mood = InnerLifeService.Mood;
+            var emoji = InnerLifeService.MoodEmoji(mood);
+            lblMood.Text = $" {mood}{emoji}";
+        }
+        catch { lblMood.Text = ""; }
+    }
+
+    /// <summary>刷新推理等级芯片：模型支持推理或开启强制思考时显示。</summary>
+    private void UpdateReasoningChip()
+    {
+        try
+        {
+            bool show = AppSettings.ReasoningSupported || AppSettings.ForceThinking;
+            reasonChip.IsVisible = show;
+            if (show)
+            {
+                var options = AppSettings.GetReasoningOptions();
+                var choice = AppSettings.ReasoningChoice;
+                reasonLbl.Text = AppSettings.ForceThinking && options.Count == 0
+                    ? "思考:开"
+                    : (string.IsNullOrEmpty(choice) ? "思考:关" : "思考:" + choice);
+            }
+        }
+        catch { reasonChip.IsVisible = false; }
+    }
+
+    /// <summary>点击推理芯片：弹出档位选择器。</summary>
+    private async void OnReasoningChipTapped(object? sender, EventArgs e)
+    {
+        var options = AppSettings.GetReasoningOptions();
+        if (options.Count == 0)
+        {
+            AppSettings.ForceThinking = !AppSettings.ForceThinking;
+            UpdateReasoningChip();
             return;
         }
-        int pct = (int)Math.Round(_lastCacheHit * 100.0 / total);
-        lblCacheHit.Text = $"缓存命中 {pct}%";
+        var current = AppSettings.ReasoningChoice;
+        var allOptions = new List<string> { "关", current };
+        foreach (var o in options) if (!allOptions.Contains(o)) allOptions.Add(o);
+        var selected = await DisplayActionSheet("选择推理等级", null, null, allOptions.ToArray());
+        if (selected != null)
+        {
+            if (selected == "关") AppSettings.ReasoningChoice = "";
+            else AppSettings.ReasoningChoice = selected;
+            UpdateReasoningChip();
+        }
+    }
+
+    /// <summary>刷新标题栏上下文用量显示：上下文:352K/1M·35.2%（模型返回的 prompt token 占用 / 上下文窗口 · 占比）。</summary>
+    private void UpdateContextLabel()
+    {
+        try
+        {
+            var stats = UsageStats.Current;
+            int used = stats.LastPromptTokens;          // 模型返回 usage 的 prompt 总数（本次占用）
+            if (used <= 0)
+            {
+                // 模型未返回 usage（部分中转会摘掉）：用本地估算兜底，保证有数
+                used = Messages.Sum(m => EstimateTokens(m.Content));
+            }
+            int cap = AppSettings.EffectiveMaxTokens;   // 模型上下文窗口（从 /models 的 context_length 抓取）
+            if (cap <= 0) cap = AppSettings.ContextFallbackLimit;
+            double pct = (double)used / cap * 100.0;
+            lblCtx.Text = $"上下文:{FormatK(used)}/{FormatK(cap)}·{pct:F1}%";
+        }
+        catch { lblCtx.Text = ""; }
+    }
+
+    /// <summary>刷新缓存命中率显示：缓存命中:98%（模型返回 cached/prompt 的占比）。</summary>
+    private void UpdateCacheHitLabel()
+    {
+        try
+        {
+            var stats = UsageStats.Current;
+            double rate = stats.LastHitRate;
+            lblCacheHit.Text = $"缓存命中:{rate:F0}%";
+        }
+        catch { lblCacheHit.Text = ""; }
+    }
+
+    /// <summary>数字转 K/M 人性化格式（352K / 1M）。</summary>
+    private static string FormatK(int value)
+    {
+        if (value >= 1_000_000) return (value / 1_000_000.0).ToString("0.#") + "M";
+        if (value >= 1_000) return (value / 1_000.0).ToString("0.#") + "K";
+        return value.ToString();
     }
 
     private void ApplyApiKey()
@@ -230,6 +379,33 @@ public partial class ChatPage : ContentPage
         var key = AppSettings.ApiKey.Trim();
         if (!string.IsNullOrEmpty(key))
             _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {key}");
+    }
+
+    /// <summary>把当前主题色应用到聊天页的关键元素。</summary>
+    private void ApplyThemeColor()
+    {
+        var theme = AppSettings.ThemeColor;
+        var oldColor = Color.Parse("#FBB5B2");
+        ApplyThemeToVisualTree(this, theme, oldColor);
+    }
+
+/// <summary>递归遍历可视树，把 oldColor 替换成 theme。聊天气泡与输入栏内部组件固定原色不跟主题。</summary>
+    private static void ApplyThemeToVisualTree(VisualElement element, Color theme, Color oldColor)
+    {
+        if (element is Border iBar && iBar.StyleId == "输入栏跳过") return;
+        if (element is Label lbl && lbl.TextColor == oldColor && lbl.StyleId != "btnSend") lbl.TextColor = theme;
+        if (element is Button btn && btn.BackgroundColor == oldColor && btn.StyleId != "btnSend") btn.BackgroundColor = theme;
+        if (element is Border bd && bd.BackgroundColor == oldColor && bd.StyleId != "chatBubble") bd.BackgroundColor = theme;
+        if (element is MorphIcon mi && mi.IconColor == oldColor) mi.IconColor = theme;
+
+        if (element is Layout layout)
+        {
+            foreach (var child in layout.Children)
+            {
+                if (child is VisualElement ve)
+                    ApplyThemeToVisualTree(ve, theme, oldColor);
+            }
+        }
     }
 
     private async void OnSettingsClicked(object? sender, EventArgs e)
@@ -249,6 +425,30 @@ public partial class ChatPage : ContentPage
     private void OnInputCompleted(object? sender, EventArgs e)
     {
         SendClick(this, EventArgs.Empty);
+    }
+
+    /// <summary>点击输入栏：聚焦输入框。</summary>
+    private void OnInputBarTapped(object? sender, EventArgs e)
+    {
+        txtInput.Focus();
+    }
+
+    /// <summary>点击语音按钮：语音识别后发送。</summary>
+    private async void OnVoiceClicked(object? sender, EventArgs e)
+    {
+        try
+        {
+            var result = await RecognizeVoiceAsync();
+            if (!string.IsNullOrWhiteSpace(result))
+            {
+                txtInput.Text = result;
+                SendClick(this, EventArgs.Empty);
+            }
+        }
+        catch (Exception ex)
+        {
+            await DisplayAlert("语音识别", $"识别失败：{ex.Message}", "确定");
+        }
     }
 
     private async void SendClick(object? sender, EventArgs e)
@@ -282,6 +482,16 @@ public partial class ChatPage : ContentPage
             }
             // 发送前刷新感知上下文，保证"此刻"信息准确（时间/前台应用/通知等）
             _deviceContext = await DeviceContextService.BuildAsync();
+            // 刷新上一条消息的复盘上下文（如果开关开着且已生成）
+            _reviewContext = MessageReviewService.BuildReviewContext();
+
+            if (AppSettings.AgentLoopEnabled)
+            {
+                // Agent 循环执行模式：多轮自主推进，边跑边出过程，完成后折叠并重新总结
+                await RunAgentLoopAsync(text, aiMsg);
+                return;
+            }
+
             try
             {
                 await StreamRequest(text, aiMsg);
@@ -305,11 +515,110 @@ public partial class ChatPage : ContentPage
             aiMsg.IsWaiting = false;
             _ = ChatStore.Instance.SaveMessageAsync(aiMsg);
             UpdateContextLabel();
+            UpdateCacheHitLabel();
             // 记忆提取 + 内心反思（异步，不阻塞发送流程）
             MemoryService.OnExchangeCompleted(Messages);
             _ = InnerLifeService.ReflectAsync(Messages);
+            // 每条消息 AI 必看（开关独立，异步不阻塞）
+            _ = MessageReviewService.ReviewAsync(text, turnIndex: Messages.Count);
             // 自动压缩检查（异步，不阻塞发送流程）
             _ = CheckAndAutoCompressAsync();
+        }
+    }
+
+    /// <summary>
+    /// Agent 循环执行：把局面交给 AgentLoopService，
+    /// 过程中把每一步的缩略行实时刷进气泡（{emoji 动作 +N -N}），
+    /// 完成后过程区自动折叠，正文显示重新总结过的最终答复。
+    /// </summary>
+    private async Task RunAgentLoopAsync(string text, ChatMsg aiBubble)
+    {
+        var run = new AgentRun();
+        aiBubble.AgentRun = run;
+        aiBubble.IsWaiting = true;
+
+        // 推理流实时显示：让用户看到 Ta 正在想什么（限流刷新，避免每来一个字就重排界面）
+        var thinkingBuf = new StringBuilder();
+        var lastFlush = DateTime.Now;
+        void OnThinking(string delta)
+        {
+            thinkingBuf.Append(delta);
+            // 每 300ms 刷一次，或缓冲区已攒够一截就刷
+            if ((DateTime.Now - lastFlush).TotalMilliseconds < 300 && thinkingBuf.Length < 120) return;
+            lastFlush = DateTime.Now;
+            var tail = thinkingBuf.ToString();
+            // 只保留末尾一小段（流光是对整串文字做逐帧 MeasureText，太长会拖慢渲染）
+            if (tail.Length > 48) tail = "…" + tail[^48..];
+            tail = tail.Replace('\n', ' ').Replace('\r', ' ').Trim();
+            run.SetLiveThought(tail);
+            aiBubble.NotifyAgentChanged();
+        }
+        AgentLoopService.ThinkingDelta += OnThinking;
+
+        // 每完成一步刷新界面；同时保证滚动跟着走
+        void OnStep(AgentRun r)
+        {
+            // 进入新一轮思考时先把上一轮的残留思考文字清掉，避免误导用户
+            if (r.Steps.Count > 0 && r.Steps[^1].Kind == "think")
+            {
+                thinkingBuf.Clear();
+                r.SetLiveThought("");
+            }
+            aiBubble.NotifyAgentChanged();
+            msgList.ScrollTo(Messages.Count - 1, position: ScrollToPosition.End, animate: false);
+        }
+        AgentLoopService.StepChanged += OnStep;
+
+        // 删除确认通道直接接到当前页面（AgentActionExecutor 不依赖 UI）
+        AgentActionExecutor.DeleteConfirmer = async path =>
+        {
+            try { return await DisplayAlert("确认删除", $"Ta 想删除文件：\n{path}\n\n确定允许吗？", "删除", "拒绝"); }
+            catch { return false; }
+        };
+
+        try
+        {
+            // 注意：历史里已经包含本轮用户消息（BuildHistoryMessages 会带上），
+            // RunAsync 内部会做去重，这里不需要额外处理。
+            var history = BuildHistoryMessages(aiBubble);
+            var extra = new StringBuilder();
+            if (!string.IsNullOrEmpty(_deviceContext)) extra.AppendLine("【你此刻能看到的用户状态】\n" + _deviceContext);
+            if (!string.IsNullOrEmpty(_innerContext)) extra.AppendLine(_innerContext);
+            if (!string.IsNullOrEmpty(_observedContext)) extra.AppendLine(_observedContext);
+            if (!string.IsNullOrEmpty(_reviewContext)) extra.AppendLine(_reviewContext);
+            if (!string.IsNullOrEmpty(_memoryContext)) extra.AppendLine(_memoryContext);
+            if (!string.IsNullOrEmpty(_diaryContext)) extra.AppendLine(_diaryContext);
+
+            var loopResult = await AgentLoopService.RunAsync(text, history, extra.ToString());
+
+            // 时限到 / 出错：给个交代而不是静默
+            if (!string.IsNullOrEmpty(loopResult.Error) && loopResult.Error != "__cancelled__")
+                aiBubble.Content = FriendlyNetworkError(new Exception(loopResult.Error));
+            else
+            {
+                var head = loopResult.TimedOut
+                    ? $"（已到 {AppSettings.AgentTimeLimitText} 时限，先做到这里）\n\n"
+                    : "";
+                aiBubble.Content = head + loopResult.FinalText;
+            }
+
+            // 任务收尾：把整轮回环的行数总账附在最后
+            if (run.TotalAdded > 0 || run.TotalRemoved > 0)
+                aiBubble.Content += "\n\n（" + run.DeltaSummary + "）";
+        }
+        catch (Exception ex)
+        {
+            aiBubble.Content = FriendlyNetworkError(ex);
+        }
+        finally
+        {
+            AgentLoopService.StepChanged -= OnStep;
+            AgentLoopService.ThinkingDelta -= OnThinking;
+            AgentActionExecutor.DeleteConfirmer = null;
+            run.Finish();
+            aiBubble.NotifyAgentChanged();
+            aiBubble.IsWaiting = false;
+            msgList.ScrollTo(Messages.Count - 1, position: ScrollToPosition.End, animate: false);
         }
     }
 
@@ -328,6 +637,9 @@ public partial class ChatPage : ContentPage
     /// <summary>缓存的"她默默观察到的用户近况"（后台静默了解，用户看不到）。</summary>
     private string _observedContext = "";
 
+    /// <summary>缓存的"每条消息 AI 必看的复盘上下文"（用户看不到，仅下一次对话用）。</summary>
+    private string _reviewContext = "";
+
     /// <summary>
     /// 构建完整请求消息列表：system(底层+用户人设+感知+内心+记忆+日记+默默观察) + 全部聊天历史。
     /// 跳过正在生成的 aiBubble 与空内容消息。
@@ -341,6 +653,8 @@ public partial class ChatPage : ContentPage
             systemPrompt += "\n\n" + _innerContext;
         if (!string.IsNullOrEmpty(_observedContext))
             systemPrompt += "\n\n" + _observedContext;
+        if (!string.IsNullOrEmpty(_reviewContext))
+            systemPrompt += "\n\n" + _reviewContext;
         if (!string.IsNullOrEmpty(_memoryContext))
             systemPrompt += "\n\n" + _memoryContext;
         if (!string.IsNullOrEmpty(_diaryContext))
@@ -376,127 +690,104 @@ public partial class ChatPage : ContentPage
         return messages;
     }
 
-    private async Task StreamRequest(string prompt, ChatMsg aiBubble)
+    /// <summary>友好的网络错误提示。</summary>
+    private string FriendlyNetworkError(Exception ex)
     {
-        // 模型选择：强制思考或高推理等级 → 思考模型；否则用用户选择的模型
+        if (ex is HttpRequestException httpEx && httpEx.StatusCode.HasValue)
+        {
+            var code = (int)httpEx.StatusCode.Value;
+            if (code == 401) return "API Key 无效，请检查设置";
+            if (code == 429) return "请求太频繁，请稍后再试";
+            if (code >= 500) return "服务器错误，请稍后再试";
+        }
+        return "网络连接失败：" + ex.Message;
+    }
+
+    /// <summary>是否为可重试的网络错误（连接中断/超时）。</summary>
+    private bool IsTransientNetworkError(Exception ex)
+    {
+        return ex is HttpRequestException && ex.InnerException is TimeoutException
+            || ex is HttpRequestException && ex.InnerException is System.Net.Sockets.SocketException
+            || ex is TaskCanceledException;
+    }
+
+    /// <summary>流式请求：发送用户输入 → 流式接收 AI 回复。</summary>
+    private async Task StreamRequest(string text, ChatMsg aiBubble)
+    {
         string model = AppSettings.ResolveChatModel(AppSettings.ForceThinking);
 
-        // 消息列表：system(底层+用户人设+感知+内心+记忆+日记) + 完整聊天历史（含当前用户消息，跳过正在生成的 aiBubble）
         var messages = BuildHistoryMessages(aiBubble);
-
         var reqBody = BuildChatBody(model, messages, stream: true);
         var json = JsonSerializer.Serialize(reqBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
-
         var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content);
         resp.EnsureSuccessStatusCode();
 
-        using var stream = await resp.Content.ReadAsStreamAsync();
-        using var reader = new StreamReader(stream);
-
-        // 网络侧全速收流 + 显示侧逐字上屏（见 ConsumeSseAsync）。
-        // {cmd}/{api}/{img} 指令在网络侧出现即断流进入对应管线（第一轮过渡语不显示）。
-        var res = await ConsumeSseAsync(reader, aiBubble, watchCommands: true);
-
-        if (res.ThinkingStart.HasValue)
-            aiBubble.ThinkingSeconds = (DateTime.Now - res.ThinkingStart.Value).TotalSeconds;
-        aiBubble.IsThinkingActive = false;
-
-        var rawText = res.Buffer.ToString();
-
-        if (res.CancelledForCommand)
+        // 流式处理：实时显示，同时检测指令（{cmd:"..."} / {api:"..."} / {img:"..."} / {browse:"..."}）
+        var sseResult = await ConsumeSseAsync(resp, aiBubble);
+        if (sseResult.CancelledForCommand)
         {
-            aiBubble.Content = "";
-            await RunTerminalPipeline(prompt, rawText, aiBubble);
-            return;
+            // 检测到 Shizuku 指令：拉取终端命令列表并执行
+            await RunCommandPipeline(text, aiBubble);
         }
-        if (res.CancelledForApi)
+        else if (sseResult.CancelledForApi)
         {
-            aiBubble.Content = "";
-            await RunApiPipeline(prompt, rawText, aiBubble);
-            return;
+            // 检测到 API 指令：调用感知 API 并回传结果
+            await RunApiPipeline(text, aiBubble.Content, aiBubble);
         }
-        if (res.CancelledForImage)
+        else if (sseResult.CancelledForImage)
         {
-            aiBubble.Content = "";
-            _ = GenerateImagePipelineAsync(rawText, aiBubble);
-            return;
+            // 检测到文生图指令：调用图片生成 API
+            await GenerateImagePipelineAsync(aiBubble.Content, aiBubble);
         }
-
-        // {mood}/{avatar} 副作用（显示层已隐藏这些 token，正文本身干净）
-        var moods = InstructionParser.Extract(rawText, "mood");
-        if (moods.Count > 0) InnerLifeService.SetMood(moods[^1]);
-        var avatars = InstructionParser.Extract(rawText, "avatar");
-        if (avatars.Count > 0) _ = ApplyAvatarAsync(avatars[^1]);
-
-        // 语音回复：配置了 TTS 且开启自动朗读时，把最终正文读出来
+        else if (sseResult.CancelledForBrowse)
+        {
+            // 检测到上网指令：调用浏览器插件
+            var url = ExtractBrowseCommand(aiBubble.Content);
+            if (!string.IsNullOrEmpty(url))
+            {
+                var browseResult = await BrowserTool.FetchAsync(url);
+                // 把网页内容作为额外上下文继续对话
+                var continueMessages = new List<object>
+                {
+                    new { role = "system", content = AppSettings.BuildSystemPrompt() },
+                    new { role = "user", content = text },
+                    new { role = "assistant", content = aiBubble.Content },
+                    new { role = "user", content = $"请根据以下网页内容回答：\n\n{browseResult}" }
+                };
+                var continueReq = BuildChatBody(model, continueMessages, stream: true);
+                var continueJson = JsonSerializer.Serialize(continueReq);
+                var continueContent = new StringContent(continueJson, Encoding.UTF8, "application/json");
+                var continueResp = await _httpClient.PostAsync(AppSettings.ApiUrl, continueContent);
+                continueResp.EnsureSuccessStatusCode();
+                await ConsumeSseAsync(continueResp, aiBubble);
+            }
+        }
+        _ = ChatStore.Instance.SaveMessageAsync(aiBubble);
         await SpeakIfEnabledAsync(aiBubble.Content);
     }
 
-    /// <summary>{avatar:"..."}：Ta用文生图给自己画新头像，完成后刷新标题栏。</summary>
-    private async Task ApplyAvatarAsync(string desc)
+    /// <summary>构建请求体（支持推理开关）。流式请求带 stream_options 让 DeepSeek 等返回 usage，供上下文/缓存统计。</summary>
+    private object BuildChatBody(string model, List<object> messages, bool stream)
     {
-        try
+        var body = new
         {
-            if (await AvatarService.GenerateAsync(desc))
-                imgAvatar.Source = AvatarService.Load();
-        }
-        catch { }
+            model,
+            messages,
+            stream,
+            max_tokens = 4000,
+            reasoning_effort = AppSettings.ForceThinking ? "high" : "none",
+            stream_options = stream ? new { include_usage = true } : null
+        };
+        return body;
     }
 
-    /// <summary>
-    /// 消费 SSE 流：网络侧全速收流（连接尽快收完关闭，把暴露在「切后台被系统掐线 /
-    /// 服务端掐慢连接」风险下的时间从几十秒缩到几秒），显示侧并发地按一秒五十字的
-    /// 节奏逐字上屏，打字手感与旧版一致。
-    /// watchCommands=true 时，正文一旦出现完整 {cmd:"..."} / {img:"..."} 指令立即断流。
-    /// </summary>
-    private async Task<SseConsumeResult> ConsumeSseAsync(StreamReader reader, ChatMsg bubble, bool watchCommands)
+    /// <summary>消费 SSE 流，返回解析结果。</summary>
+    private async Task<SseConsumeResult> ConsumeSseAsync(HttpResponseMessage resp, ChatMsg aiBubble)
     {
-        var res = new SseConsumeResult();
-        var displayCts = new CancellationTokenSource();
-
-        // 显示协程：追着网络侧收到的正文逐字上屏（一秒五十字）；
-        // 指令 token（{cmd}/{api}/{img}/{mood}/{avatar}/{say}）不上屏、只做副作用；
-        // 网络收完后继续把剩余部分放完
-        async Task DisplayAsync()
-        {
-            int src = 0;
-            bool hiding = false;
-            try
-            {
-                while (true)
-                {
-                    displayCts.Token.ThrowIfCancellationRequested();
-
-                    if (src >= res.Buffer.Length)
-                    {
-                        if (res.ReadDone) break;
-                        await Task.Delay(40); // 等网络再吐一点
-                        continue;
-                    }
-
-                    if (hiding)
-                    {
-                        if (res.Buffer[src] == '}') hiding = false;
-                        src++;
-                        continue;
-                    }
-
-                    int m = InstructionParser.MatchLen(res.Buffer, src, res.ReadDone);
-                    if (m > 0) { hiding = true; src += m; continue; }
-                    if (m < 0 && !res.ReadDone) { await Task.Delay(40); continue; } // 尾部疑似指令前缀，等更多字符
-
-                    bubble.Content += res.Buffer[src];
-                    src++;
-                    FollowBottomIfNeeded();
-                    await Task.Delay(20);
-                }
-            }
-            catch (OperationCanceledException) { }
-        }
-
-        var displayTask = DisplayAsync();
-
+        var result = new SseConsumeResult();
+        using var stream = await resp.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(stream);
         string? line;
         while ((line = await reader.ReadLineAsync()) != null)
         {
@@ -506,211 +797,161 @@ public partial class ChatPage : ContentPage
             try
             {
                 var chunk = JsonSerializer.Deserialize<StreamChunk>(data);
-
-                // 捕获缓存命中数据（usage 通常出现在流末尾的最后一个 chunk）
-                if (chunk?.usage != null)
+                var delta = chunk?.choices?[0]?.delta;
+                if (delta != null)
                 {
-                    var (hit, miss) = CacheUsage.Extract(chunk.usage);
-                    _lastCacheHit = Math.Max(_lastCacheHit, hit);
-                    _lastCacheMiss = Math.Max(_lastCacheMiss, miss);
-                    UpdateCacheHitLabel();
+                    // 推理内容（独立字段）
+                    if (!string.IsNullOrEmpty(delta.reasoning_content))
+                    {
+                        // 首个思考字：开始计时；此后每个思考字都在刷新"思考结束时刻"
+                        if (!result.ThinkingStart.HasValue) result.ThinkingStart = DateTime.Now;
+                        result.ThinkingEnd = DateTime.Now;
+                        aiBubble.Thinking += delta.reasoning_content;
+                        aiBubble.IsThinkingActive = true;
+                        result.ThinkingActive = true;
+                        // 实时刷新用时（只算思考过程，正文不计入）
+                        aiBubble.ThinkingSeconds = (result.ThinkingEnd.Value - result.ThinkingStart.Value).TotalSeconds;
+                    }
+                    // 普通内容
+                    if (!string.IsNullOrEmpty(delta.content))
+                    {
+                        aiBubble.Content += delta.content;
+                        result.ContentStarted = true;
+                        // 正文开始 = 思考过程结束：冻结用时（此后不再累加）
+                        aiBubble.IsThinkingActive = false;
+                        result.ThinkingFrozen = true;
+                        // 检测指令：{cmd:"..."} / {api:"..."} / {img:"..."} / {browse:"..."}
+                        if (delta.content.Contains("{cmd:") || delta.content.Contains("{api:") || 
+                            delta.content.Contains("{img:") || delta.content.Contains("{browse:"))
+                        {
+                            // 提前断流，交给后续管线处理
+                            if (delta.content.Contains("{cmd:")) result.CancelledForCommand = true;
+                            if (delta.content.Contains("{api:")) result.CancelledForApi = true;
+                            if (delta.content.Contains("{img:")) result.CancelledForImage = true;
+                            if (delta.content.Contains("{browse:")) result.CancelledForBrowse = true;
+                            break;
+                        }
+                    }
                 }
-
-                // 思考模型（deepseek-reasoner）的推理过程：逐块累积到 Thinking
-                var reasoning = chunk?.choices?[0]?.delta?.reasoning_content;
-                if (!string.IsNullOrEmpty(reasoning))
+                // 处理 usage 统计（缓存命中率 + 上下文用量）
+                if (chunk?.usage != null && chunk.usage.Value.ValueKind == JsonValueKind.Object)
                 {
-                    if (res.ThinkingStart == null) res.ThinkingStart = DateTime.Now;
-                    if (!res.ThinkingActive && !res.ContentStarted)
+                    try
                     {
-                        res.ThinkingActive = true;
-                        bubble.ThinkingExpanded = true; // 思考中：展开显示思考过程
-                        bubble.IsThinkingActive = true; // 思考中：启动流光
+                        var tu = TokenUsageMapper.FromElement(chunk.usage);
+                        if (tu != null)
+                        {
+                            UsageStats.Current.Apply(tu);
+                            _lastCacheHit = tu.CachedTokens;
+                            _lastCacheMiss = tu.PromptTokens - tu.CachedTokens;
+                            UpdateCacheHitLabel();
+                            UpdateContextLabel();
+                        }
                     }
-                    bubble.Thinking += reasoning;
-                    FollowBottomIfNeeded();
-                }
-
-                var delta = chunk?.choices?[0]?.delta?.content;
-                if (!string.IsNullOrEmpty(delta))
-                {
-                    if (!res.ContentStarted)
-                    {
-                        res.ContentStarted = true;
-                        res.ThinkingActive = false;
-                        bubble.ThinkingExpanded = false; // 正文开始：自动收起思考过程
-                        bubble.IsThinkingActive = false; // 正文开始：停止思考流光
-                    }
-                    res.Buffer.Append(delta);
-
-                    if (watchCommands)
-                    {
-                        var raw = res.Buffer.ToString();
-                        if (ExtractRunCommands(raw).Count > 0) { res.CancelledForCommand = true; break; }
-                        if (InstructionParser.Extract(raw, "api").Count > 0) { res.CancelledForApi = true; break; }
-                        if (ExtractImageCommands(raw).Count > 0) { res.CancelledForImage = true; break; }
-                    }
+                    catch { }
                 }
             }
             catch { }
+            FollowBottomIfNeeded();
         }
-        res.ReadDone = true;
-
-        if (res.CancelledForCommand || res.CancelledForApi || res.CancelledForImage)
-            displayCts.Cancel(); // 指令场景：正文不显示第一轮过渡语，停掉打字协程
-
-        await displayTask; // 指令场景：立即返回；正常场景：等剩余正文放完
-        return res;
+        result.ReadDone = true;
+        aiBubble.IsThinkingActive = false;
+        // 用时只算"首个思考字 → 最后一个思考字"；若思考后直接结束（无正文）也在此冻结
+        if (result.ThinkingStart.HasValue && result.ThinkingEnd.HasValue)
+            aiBubble.ThinkingSeconds = (result.ThinkingEnd.Value - result.ThinkingStart.Value).TotalSeconds;
+        return result;
     }
 
-    /// <summary>开启 TTS 自动朗读且配置有效时朗读文本；失败静默（不影响文字回复）。</summary>
-    private async Task SpeakIfEnabledAsync(string? text)
+    /// <summary>提取 Shizuku 指令（{cmd:"..."}）。</summary>
+    private List<string> ExtractCommands(string text)
     {
-        try
+        var cmds = new List<string>();
+        var start = text.IndexOf("{cmd:\"");
+        while (start >= 0)
         {
-            if (!AppSettings.TtsAutoPlay || string.IsNullOrWhiteSpace(text)) return;
-            await TtsPlayer.PlayAsync(text);
+            var end = text.IndexOf("\"}", start + 6);
+            if (end < start) break;
+            var cmd = text.Substring(start + 6, end - start - 6).Trim();
+            if (!string.IsNullOrEmpty(cmd)) cmds.Add(cmd);
+            start = text.IndexOf("{cmd:\"", end + 2);
         }
-        catch { /* 朗读失败不影响聊天 */ }
+        return cmds;
     }
 
-    // ─────────── 布局整理（取消玻璃，稳定优先） ───────────
-
-    /// <summary>
-    /// 取消玻璃效果后的布局整理：
-    /// - 标题栏实色、无玻璃
-    /// - 悬浮输入栏去掉纯色背板（透明，只留控件）
-    /// - 聊天列表顶部让出标题栏、底部让出发送栏（气泡最低位在发送栏上方）
-    /// </summary>
-    private void ApplyGlass()
+    /// <summary>提取 API 指令（{api:"..."}）。</summary>
+    private string ExtractApiCommand(string text)
     {
-#if ANDROID
-        var (statusH, navH) = GetSystemBarInsets();
-#else
-        int statusH = 0, navH = 0;
-#endif
-
-        // 标题栏实色（保持原有观感）
-        titleBar.BackgroundColor = Color.FromArgb("#181211");
-        titleBar.Padding = new Thickness(14, statusH + 10, 14, 10);
-
-        // 悬浮输入栏：去掉纯色背板，完全透明，只保留内部控件
-        inputBar.BackgroundColor = Colors.Transparent;
-        inputBar.Stroke = Colors.Transparent;
-        inputBar.StrokeThickness = 0;
-
-        // 聊天列表：顶部让出标题栏高度；底部让出发送栏高度 + 边距（气泡最低位在发送栏上方）
-        double topM = titleBar.Height > 0 ? titleBar.Height : statusH + 52;
-        double inputH = inputBar.Height > 0 ? inputBar.Height : 52;
-        msgList.Margin = new Thickness(0, topM, 0, navH + inputH + 16);
-
-        // 布局完成后用实测高度再校正一次
-        Dispatcher.DispatchDelayed(TimeSpan.FromMilliseconds(250), () =>
-        {
-            double top = titleBar.Height > 0 ? titleBar.Height : statusH + 52;
-            msgList.Margin = new Thickness(0, top, 0, navH + Math.Max(inputBar.Height, 52) + 16);
-        });
+        var start = text.IndexOf("{api:\"");
+        if (start < 0) return "";
+        var end = text.IndexOf("\"}", start + 6);
+        if (end < start) return "";
+        return text.Substring(start + 6, end - start - 6).Trim();
     }
 
-#if ANDROID
-    /// <summary>取系统条高度（状态栏/导航栏）。旧 API 的弃用属性在 Android 15 前仍返回正确值。</summary>
-    private static (int top, int bottom) GetSystemBarInsets()
+    /// <summary>提取文生图指令（{img:"..."}）。</summary>
+    private List<string> ExtractImageCommands(string text)
     {
-        try
+        var descs = new List<string>();
+        var start = text.IndexOf("{img:\"");
+        while (start >= 0)
         {
-            var insets = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity?.Window?.DecorView?.RootWindowInsets;
-            if (insets != null)
-                return (insets.SystemWindowInsetTop, insets.SystemWindowInsetBottom);
+            var end = text.IndexOf("\"}", start + 6);
+            if (end < start) break;
+            var desc = text.Substring(start + 6, end - start - 6).Trim();
+            if (!string.IsNullOrEmpty(desc)) descs.Add(desc);
+            start = text.IndexOf("{img:\"", end + 2);
         }
-        catch { }
-        return (0, 0);
-    }
-#endif
-
-    /// <summary>点击悬浮输入栏空白处：聚焦输入框（玻璃栏有内边距，点了边角也能打字）。</summary>
-    private void OnInputBarTapped(object? sender, EventArgs e)
-    {
-        txtInput.Focus();
+        return descs;
     }
 
-    /// <summary>是否为可自动重试的瞬时网络错误（连接被掐/中断类）。</summary>
-    private static bool IsTransientNetworkError(Exception ex)
+    /// <summary>提取上网指令（{browse:"..."}）。</summary>
+    private string ExtractBrowseCommand(string text)
     {
-        var msg = ex.Message ?? "";
-        return msg.Contains("Socket closed", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("connection abort", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("Connection reset", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("Read error", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("timed out", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("Network is unreachable", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>把底层网络异常翻译成人话，别再让"Socket closed"吓人。</summary>
-    private static string FriendlyNetworkError(Exception ex)
-    {
-        var msg = ex.Message ?? "";
-        if (msg.Contains("Socket closed", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("connection abort", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("Read error", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("Connection reset", StringComparison.OrdinalIgnoreCase))
-            return "网络连接被中断了（切后台太久被系统冻结、或服务端断开都可能）。已自动重试过一次仍失败，检查一下网络后重新发送即可。";
-        if (msg.Contains("timed out", StringComparison.OrdinalIgnoreCase))
-            return "请求超时了，网络可能不稳定，稍后再发一次。";
-        return "请求失败：" + msg;
+        var start = text.IndexOf("{browse:\"");
+        if (start < 0) return "";
+        var end = text.IndexOf("\"}", start + 9);
+        if (end < start) return "";
+        return text.Substring(start + 9, end - start - 9).Trim();
     }
 
     /// <summary>
-    /// 终端交互流水线（全程后台自动，不弹前台）：
-    /// 1) 检测 AI 隐藏指令 {cmd:"..."} → 打开三行头部，状态=与Shizuku通信
-    /// 2) 拉取终端 → 状态=拉取终端
-    /// 3) 执行命令 → 状态=运行终端
-    /// 4) 有输出 → 状态=完成，结果填入第三行
-    /// 5) 把命令输出回传给模型，结合用户问题生成最终答案。
-    /// rawText 是 AI 第一轮的原始输出（含 {cmd:...} 指令）。
-    /// 命令场景下第一轮正文不显示，正文仅由第二轮的最终总结生成。
+    /// Shizuku 终端命令管线：检测到 {cmd:"..."} → 解析命令列表 → 逐条执行 → 三行气泡显示执行过程
+    /// → 把结果回传给模型生成最终答案。
     /// </summary>
-    private async Task RunTerminalPipeline(string prompt, string rawText, ChatMsg aiBubble)
+    private async Task RunCommandPipeline(string prompt, ChatMsg aiBubble)
     {
-        // 打开三行头部小气泡，初始状态；命令场景不显示第一轮正文
+        // 1) 初始化终端状态
         aiBubble.HasTerminalHeader = true;
-        aiBubble.IsThinkingActive = false; // 进入终端管线：停止思考流光
-        aiBubble.TerminalTitle = "调用 Shizuku 终端命令";
         aiBubble.TerminalStep = "与Shizuku通信";
         aiBubble.TerminalOutput = "";
-        aiBubble.Content = "";
+        aiBubble.TerminalTitle = "终端执行";
+        ScrollToBottom();
+        FollowBottomIfNeeded();
 
-        // 从原始文本提取 {cmd:"..."} 隐藏指令
-        var commands = ExtractRunCommands(rawText);
-        if (commands.Count == 0)
+        // 2) 检查 Shizuku 权限
+#if ANDROID
+        if (!ShizukuRunner.Available())
         {
-            // 命令提取失败（异常兜底）：给用户一个明确提示，避免空白
-            aiBubble.TerminalStep = "完成";
-            aiBubble.TerminalOutput = "未解析到命令";
-            aiBubble.Content = "未能从回复中解析出要执行的命令。";
+            aiBubble.TerminalOutput = "Shizuku 未授权";
             return;
         }
 
-        // 状态机：拉取终端
-        aiBubble.TerminalStep = "拉取终端";
-
-        var outputs = new List<(string cmd, string result)>();
-        foreach (var cmd in commands)
+        var cmds = ExtractCommands(aiBubble.Content);
+        if (cmds.Count == 0)
         {
-            // 高危命令：要求用户确认后才执行
-            if (CommandSecurity.IsHighRisk(cmd))
-            {
-                bool ok = await HighRiskConfirmAsync(cmd);
-                if (!ok) continue;
-            }
+            aiBubble.TerminalStep = "完成";
+            aiBubble.TerminalOutput = "未找到有效命令";
+            return;
+        }
 
-            // 状态：运行终端
-            aiBubble.TerminalStep = "运行终端";
-            if (!ShizukuRunner.Available())
-            {
-                ShizukuRunner.RequestPermission();
-                aiBubble.TerminalOutput = "Shizuku 未授权";
-                continue;
-            }
+        // 3) 逐条执行命令
+        var outputs = new List<(string cmd, string result)>();
+        foreach (var cmd in cmds)
+        {
+            aiBubble.TerminalStep = "拉取终端";
+            aiBubble.TerminalOutput = "";
+            ScrollToBottom();
+            FollowBottomIfNeeded();
 
             var result = await ShizukuRunner.ExecuteAsync(cmd);
             var combined = new StringBuilder();
@@ -719,8 +960,8 @@ public partial class ChatPage : ContentPage
             if (result.ExitCode != 0) combined.Append($"(exit {result.ExitCode})");
             outputs.Add((cmd, combined.ToString()));
 
-            // 先把结果写入第三行，但保持“运行终端”状态一段时间，
-            // 让浅绿扫光动画可被看到（验收），再切到“完成”。
+            // 先把结果写入第三行，但保持"运行终端"状态一段时间，
+            // 让浅绿扫光动画可被看到（验收），再切到"完成"。
             aiBubble.TerminalOutput = NormalizeSingleLine(combined.ToString());
             aiBubble.TerminalStep = "运行终端";
             FollowBottomIfNeeded();
@@ -750,6 +991,7 @@ public partial class ChatPage : ContentPage
         foreach (var o in outputs)
             toolResults.AppendLine($"$ {o.cmd}\n{o.result}");
         await StreamSummaryReply(prompt, toolResults.ToString(), aiBubble);
+#endif
     }
 
     /// <summary>
@@ -759,305 +1001,154 @@ public partial class ChatPage : ContentPage
     /// </summary>
     private async Task RunApiPipeline(string prompt, string rawText, ChatMsg aiBubble)
     {
+        var apiCmd = ExtractApiCommand(rawText);
+        if (string.IsNullOrEmpty(apiCmd)) return;
+
+        // 1) 初始化终端状态
         aiBubble.HasTerminalHeader = true;
-        aiBubble.IsThinkingActive = false;
-        aiBubble.Content = "";
+        aiBubble.TerminalStep = "调用API";
+        aiBubble.TerminalOutput = "";
+        aiBubble.TerminalTitle = $"调用「{apiCmd}」API";
+        ScrollToBottom();
+        FollowBottomIfNeeded();
 
-        var ids = InstructionParser.Extract(rawText, "api").Distinct().Take(3).ToList();
-        if (ids.Count == 0)
+        try
         {
-            aiBubble.TerminalTitle = "调用感知 API";
+            // 2) 调用感知 API（DeviceContextService 统一入口）
+            var apiResult = await ApiRegistry.ExecuteAsync(apiCmd);
+            if (string.IsNullOrEmpty(apiResult))
+            {
+                aiBubble.TerminalOutput = "API调用失败：无返回结果";
+                return;
+            }
+
+            // 3) 显示结果
             aiBubble.TerminalStep = "完成";
-            aiBubble.TerminalOutput = "未解析到要调用的 API";
-            aiBubble.Content = "未能解析出要调用的 API。";
-            return;
-        }
-
-        var results = new StringBuilder();
-        foreach (var id in ids)
-        {
-            var api = ApiRegistry.Find(id);
-            aiBubble.TerminalTitle = api != null ? $"调用「{api.Name}」API" : $"调用 {id}";
-            aiBubble.TerminalStep = "调用中";
-            aiBubble.TerminalOutput = "";
-
-            var result = await ApiRegistry.ExecuteAsync(id);
-            results.AppendLine($"[{api?.Name ?? id}] {result}");
-
-            aiBubble.TerminalOutput = NormalizeSingleLine(result);
-            aiBubble.TerminalStep = "完成";
+            aiBubble.TerminalOutput = apiResult;
+            aiBubble.TerminalExecLog = $"[{apiCmd} API]\n{apiResult}";
+            ScrollToBottom();
             FollowBottomIfNeeded();
-            await Task.Delay(600);
+
+            // 4) 把 API 结果回传给模型，生成最终回答
+            await StreamSummaryReply(prompt, $"[{apiCmd} API]\n{apiResult}", aiBubble);
         }
-
-        aiBubble.TerminalExecLog = results.ToString();
-        await StreamSummaryReply(prompt, results.ToString(), aiBubble);
+        catch (Exception ex)
+        {
+            aiBubble.TerminalStep = "完成";
+            aiBubble.TerminalOutput = $"API调用失败：{ex.Message}";
+            aiBubble.TerminalExecLog = $"[{apiCmd} API]\n错误：{ex.Message}";
+        }
     }
 
-    /// <summary>把多行文本压缩为单行：换行/制表符替换为空格，超长截断。保证第三行右括号不单独换行。</summary>
-    private static string NormalizeSingleLine(string input)
-    {
-        if (string.IsNullOrEmpty(input)) return "";
-        var oneLine = input
-            .Replace("\r", " ")
-            .Replace("\n", " ")
-            .Replace("\t", " ")
-            .Trim();
-        // 合并连续空格
-        while (oneLine.Contains("  ")) oneLine = oneLine.Replace("  ", " ");
-        return oneLine.Length > 200 ? oneLine.Substring(0, 200) + "…" : oneLine;
-    }
-
-    /// <summary>第二轮：把工具（终端命令/感知 API）结果回传给模型，生成结合用户问题的最终回答。</summary>
-    private async Task StreamSummaryReply(string prompt, string toolResults, ChatMsg aiBubble)
+    /// <summary>流式总结回复：把工具结果（终端执行/API调用/图片识别）交给模型生成最终答案。</summary>
+    private async Task StreamSummaryReply(string originalPrompt, string toolResults, ChatMsg aiBubble)
     {
         string model = AppSettings.ResolveChatModel(AppSettings.ForceThinking);
 
-        // 工具场景下，最终正文只显示总结回复，不叠加第一轮正文
-        aiBubble.Content = "";
-        FollowBottomIfNeeded();
+        var summarySystem = AppSettings.BuildSystemPrompt();
+        if (!string.IsNullOrEmpty(_memoryContext))
+            summarySystem += "\n\n" + _memoryContext;
 
-        // 完整历史 + 工具结果 + 最终总结指令（让 AI 保持上下文连贯）
-        var messages = BuildHistoryMessages(aiBubble);
-        messages.Add(new { role = "assistant", content =
-                "（工具调用结果如下）\n" + toolResults });
-        messages.Add(new { role = "user", content =
-                "（刚查到的这些就是咱们私下能看到的小情报，你顺着看一眼就好）\n" +
-                toolResults + "\n" +
-                "现在像你平时的自己那样接话——保持你们之间一贯的语气和亲密感，别变成汇报。" +
-                "用这些信息自然地聊：带出你在意TA的点、顺着关心或打趣一句都可以。别报数据、别说'根据查询'，就像自己看见的一样。纯文本，不要任何 Markdown 符号。" });
+        var messages = new List<object>
+        {
+            new { role = "system", content = summarySystem },
+            new { role = "user", content = originalPrompt },
+            new { role = "assistant", content = toolResults },
+            new { role = "user", content = "请根据上面的工具执行结果回答用户的问题。" }
+        };
 
         var reqBody = BuildChatBody(model, messages, stream: true);
         var json = JsonSerializer.Serialize(reqBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content);
+        resp.EnsureSuccessStatusCode();
 
-        try
+        using var stream = await resp.Content.ReadAsStreamAsync();
+        using var reader = new StreamReader(stream);
+        string? line;
+        while ((line = await reader.ReadLineAsync()) != null)
         {
-            var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content);
-            resp.EnsureSuccessStatusCode();
-
-            using var stream = await resp.Content.ReadAsStreamAsync();
-            using var reader = new StreamReader(stream);
-            await ConsumeSseAsync(reader, aiBubble, watchCommands: false);
+            if (!line.StartsWith("data: ")) continue;
+            var data = line.Substring(6);
+            if (data == "[DONE]") break;
+            try
+            {
+                var chunk = JsonSerializer.Deserialize<StreamChunk>(data);
+                var delta = chunk?.choices?[0]?.delta?.content;
+                if (string.IsNullOrEmpty(delta)) continue;
+                aiBubble.Content += delta;
+                FollowBottomIfNeeded();
+            }
+            catch { }
         }
-        catch (Exception ex)
-        {
-            aiBubble.Content += "\n（最终总结失败：" + ex.Message + "）";
-        }
-
-        // 语音回复：终端总结完成后朗读
+        _ = ChatStore.Instance.SaveMessageAsync(aiBubble);
         await SpeakIfEnabledAsync(aiBubble.Content);
     }
 
-    /// <summary>
-    /// 组装 chat/completions 请求体：模型返回了推理档位且用户选了档时，
-    /// 附带 reasoning_effort 参数；否则保持最简请求。
-    /// </summary>
-    private static Dictionary<string, object> BuildChatBody(string model, List<object> messages, bool stream)
+    /// <summary>单行化终端输出（去除换行，避免气泡溢出）。</summary>
+    private string NormalizeSingleLine(string text)
     {
-        var body = new Dictionary<string, object>
-        {
-            ["model"] = model,
-            ["stream"] = stream,
-            ["messages"] = messages
-        };
-        if (AppSettings.ReasoningSupported)
-        {
-            var effort = AppSettings.ReasoningChoice;
-            if (!string.IsNullOrWhiteSpace(effort))
-                body["reasoning_effort"] = effort;
-        }
-        return body;
+        return text.Replace("\n", " ").Replace("\r", " ").Trim();
     }
 
-    /// <summary>刷新顶部推理等级按钮：仅当模型返回了推理档位时显示，文案为当前档位。</summary>
-    private void UpdateReasoningChip()
-    {
-        var options = AppSettings.GetReasoningOptions();
-        bool show = AppSettings.ReasoningSupported && options.Count > 0;
-        reasonChip.IsVisible = show;
-        if (show)
-        {
-            var choice = AppSettings.ReasoningChoice;
-            reasonLbl.Text = string.IsNullOrWhiteSpace(choice) ? "思考:关" : $"思考:{choice}";
-        }
-    }
-
-    /// <summary>点击推理按钮：弹出模型返回的档位列表（档位数=模型返回数），选择后立即生效。</summary>
-    private async void OnReasoningChipTapped(object? sender, EventArgs e)
-    {
-        var options = AppSettings.GetReasoningOptions();
-        if (options.Count == 0) return;
-
-        var items = new List<string> { "关闭" };
-        items.AddRange(options);
-        var picked = await DisplayActionSheet("推理等级", "取消", null, items.ToArray());
-        if (string.IsNullOrEmpty(picked) || picked == "取消") return;
-
-        AppSettings.ReasoningChoice = picked == "关闭" ? "" : picked;
-        UpdateReasoningChip();
-    }
-
-    /// <summary>提取 AI 答复中的隐藏指令 {cmd:"..."} 中的命令。</summary>
-    private static List<string> ExtractRunCommands(string content) => InstructionParser.Extract(content, "cmd");
-
-    /// <summary>提取 AI 回复中的 {img:"描述"} 指令。</summary>
-    private static List<string> ExtractImageCommands(string content) => InstructionParser.Extract(content, "img");
-    private async Task<bool> HighRiskConfirmAsync(string command)
-    {
-        // 先提示「高风险，5 秒倒计时」
-        await DisplayAlert("⚠️ 高危操作",
-            $"AI 请求执行高危命令：\n\n{command}\n\n5 秒后弹出最终确认。",
-            "知道了");
-
-        // 5 秒倒计时（简单延迟）
-        for (int i = 5; i >= 1; i--)
-        {
-            await DisplayAlert("倒计时", $"高危命令将在 {i} 秒后可确认。", "等待");
-            if (i > 1) await Task.Delay(1000);
-        }
-
-        // 最终确认
-        return await DisplayAlert("⚠️ 最终确认",
-            $"确认执行这条高危命令吗？\n\n{command}\n\n此操作可能不可恢复。",
-            "确认执行", "取消");
-    }
-
-    /// <summary>点击思考过程头部：切换展开/收起。</summary>
-    private void OnThinkingHeaderTapped(object? sender, EventArgs e)
-    {
-        if (sender is BindableObject bo && bo.BindingContext is ChatMsg msg)
-            msg.ThinkingExpanded = !msg.ThinkingExpanded;
-    }
-
-    /// <summary>收起键盘（发送消息后自动隐藏）。</summary>
-    private void HideKeyboard()
-    {
-#if ANDROID
-        var activity = Microsoft.Maui.ApplicationModel.Platform.CurrentActivity;
-        var view = activity?.CurrentFocus;
-        if (view != null)
-        {
-            var imm = (Android.Views.InputMethods.InputMethodManager?)
-                activity?.GetSystemService(Android.Content.Context.InputMethodService);
-            imm?.HideSoftInputFromWindow(view.WindowToken, 0);
-            view.ClearFocus();
-        }
-#endif
-        txtInput.Unfocus();
-    }
-
-    private void ScrollToBottom()
-    {
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            if (Messages.Count > 0)
-            {
-                msgList.ScrollTo(Messages[^1], null, ScrollToPosition.MakeVisible, true);
-            }
-        });
-    }
-
-    /// <summary>无动画直接定位到最后一条消息（打开页面/恢复时用，避免先到顶再滚的视觉跳动）。</summary>
-    private void ScrollToBottomInstant()
-    {
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            if (Messages.Count > 0)
-            {
-                msgList.ScrollTo(Messages.Count - 1, position: ScrollToPosition.End, animate: false);
-            }
-        });
-    }
-
-    /// <summary>监听滚动：判断用户是否停留在最底部（用于决定是否跟随输出）。</summary>
-    private void OnMsgListScrolled(object? sender, ItemsViewScrolledEventArgs e)
-    {
-#if ANDROID
-        // 还能向下滚动 = 未在底部；滚不动 = 已在底部
-        if (msgList.Handler?.PlatformView is AndroidX.RecyclerView.Widget.RecyclerView recycler)
-        {
-            _followBottom = !recycler.CanScrollVertically(1);
-            return;
-        }
-#endif
-        // 非 Android 兜底：最后可见项接近消息末尾视为在底部
-        _followBottom = e.LastVisibleItemIndex >= Messages.Count - 1;
-    }
-
-    /// <summary>
-    /// 跟随输出滚动：仅当用户停留在最底部时，把最新内容保持在屏幕最下方；
-    /// 用户上滑浏览历史时保持当前高度，绝不强制拉回（避免跳动）。
-    /// </summary>
-    private void FollowBottomIfNeeded()
-    {
-        if (!_followBottom) return;
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            if (Messages.Count > 0)
-            {
-                msgList.ScrollTo(Messages.Count - 1, position: ScrollToPosition.End, animate: false);
-            }
-        });
-    }
-
-    /// <summary>长按开始：记录按下的时间与被按消息。</summary>
-    private void OnMsgPointerPressed(object? sender, EventArgs e)
-    {
-        _pressTime = DateTime.Now;
-        _pressedMsg = (sender as BindableObject)?.BindingContext as ChatMsg;
-    }
-
-    /// <summary>长按结束：若超过阈值则复制该消息内容到剪贴板。</summary>
-    private async void OnMsgPointerReleased(object? sender, EventArgs e)
-    {
-        if ((DateTime.Now - _pressTime).TotalMilliseconds < LongPressMs)
-        {
-            _pressedMsg = null;
-            return;
-        }
-        if (_pressedMsg == null) return;
-        var msg = _pressedMsg;
-        _pressedMsg = null;
-
-        var text = msg.Content;
-        if (string.IsNullOrEmpty(text)) return;
-
-        try
-        {
-            await Clipboard.Default.SetTextAsync(text);
-            var preview = text.Length > 30 ? text[..30] + "…" : text;
-            await DisplayAlert("已复制", preview, "知道了");
-        }
-        catch { }
-    }
-
-    // ────────────────────────── 自动上下文压缩 ──────────────────────────
-
-    /// <summary>检查当前上下文占用是否超过阈值，是则触发 AI 总结压缩。</summary>
+    /// <summary>自动压缩：当上下文占用超过阈值（百分比）时，询问用户是否压缩早期消息。</summary>
     private async Task CheckAndAutoCompressAsync()
     {
-        if (!AppSettings.AutoCompressEnabled) return;
-        if (!await _compressLock.WaitAsync(0)) return; // 已在压缩中，跳过
+        int threshold = AppSettings.AutoCompressThreshold;
+        if (threshold <= 0) return;   // 0 表示禁用
 
+        var allTokens = Messages.Sum(m => EstimateTokens(m.Content));
+        int cap = AppSettings.EffectiveMaxTokens;   // 模型上下文窗口
+        if (cap <= 0) cap = AppSettings.ContextFallbackLimit;
+        double pct = (double)allTokens / cap * 100.0;
+        if (pct < threshold) return;  // 占用未达阈值百分比，不弹窗
+
+        var alert = await DisplayAlert("上下文过长", $"当前对话已用 {allTokens} tokens（占模型上下文 {pct:F0}%），是否压缩早期消息？", "压缩", "取消");
+        if (!alert) return;
+
+        await CompressEarlyMessagesAsync();
+    }
+
+    /// <summary>压缩早期消息（保留最近 10 条，早期消息只保留摘要）。</summary>
+    private async Task CompressEarlyMessagesAsync()
+    {
+        await _compressLock.WaitAsync();
         try
         {
-            int used = EstimateTokens();
-            int max = AppSettings.EffectiveMaxTokens;
-            double ratio = (double)used / max;
-            int threshold = AppSettings.AutoCompressThreshold;
+            if (Messages.Count <= 10) return;
 
-            if (ratio * 100 < threshold) return;
+            var compressed = new List<ChatMsg>();
+            // 保留最近 10 条
+            for (int i = Messages.Count - 10; i < Messages.Count; i++)
+                compressed.Add(Messages[i]);
 
-            // 确保最少保留 4 条消息（最近两轮对话，2 问 2 答）才压缩
-            const int keepCount = 4;
-            if (Messages.Count <= keepCount + 1) return;
+            // 压缩早期的消息（只保留关键信息）
+            var earlySummary = new StringBuilder("早期对话摘要：\n");
+            for (int i = 0; i < Messages.Count - 10; i++)
+            {
+                var msg = Messages[i];
+                if (msg.IsUser)
+                    earlySummary.AppendLine($"用户: {msg.Content}");
+                else
+                    earlySummary.AppendLine($"AI: {msg.Content}");
+            }
 
-            await AutoCompressAsync(keepCount);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[AutoCompress] 压缩失败: {ex.Message}");
+            // 清空并重新添加
+            Messages.Clear();
+            foreach (var msg in compressed)
+                Messages.Add(msg);
+
+            // 添加压缩标记
+            var compressMsg = new ChatMsg
+            {
+                Content = earlySummary.ToString(),
+                IsUser = false,
+                IsCompressed = true
+            };
+            Messages.Insert(0, compressMsg);
+            _ = ChatStore.Instance.SaveMessageAsync(compressMsg);
+
+            ScrollToBottom();
         }
         finally
         {
@@ -1065,99 +1156,16 @@ public partial class ChatPage : ContentPage
         }
     }
 
-    /// <summary>调用 AI 总结旧消息，替换为一条摘要消息。</summary>
-    private async Task AutoCompressAsync(int keepCount)
+    /// <summary>估算消息的 token 数（粗略估算）。</summary>
+    private int EstimateTokens(string text)
     {
-        // 要压缩的消息：除最后 keepCount 条之外的全部
-        int compressEnd = Messages.Count - keepCount;
-        var toCompress = Messages.Take(compressEnd).ToList();
-        if (toCompress.Count == 0) return;
-
-        // 构建对话原文供 AI 总结
-        var dialog = new StringBuilder();
-        foreach (var m in toCompress)
-        {
-            string role = m.IsUser ? "用户" : "AI";
-            dialog.AppendLine($"{role}：{m.Content}");
-        }
-
-        // 调用 API 总结（非流式，简洁快速）
-        string model = AppSettings.ResolveChatModel(AppSettings.ForceThinking);
-
-        var summaryPrompt = new
-        {
-            model,
-            stream = false,
-            messages = new object[]
-            {
-                new { role = "system", content = "你是一个对话摘要助手。请将下面的对话记录总结为一段简短精炼的摘要（保留关键信息，去除冗余，用中文）。摘要要能独立阅读，让后续对话者理解已讨论过的内容。不要加任何格式标记，纯文本。" },
-                new { role = "user", content = dialog.ToString() }
-            },
-            max_tokens = 1024
-        };
-
-        var json = JsonSerializer.Serialize(summaryPrompt);
-        var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-        var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content);
-        resp.EnsureSuccessStatusCode();
-        var respJson = await resp.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(respJson);
-        var summary = doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString();
-
-        if (string.IsNullOrWhiteSpace(summary)) return;
-
-        // 在主线程上替换消息
-        MainThread.BeginInvokeOnMainThread(() =>
-        {
-            // 移除旧消息（先收集数据库 Id，用于删除对应行）
-            var removedIds = new List<int>();
-            for (int i = compressEnd - 1; i >= 0; i--)
-            {
-                if (Messages[i].Id != 0) removedIds.Add(Messages[i].Id);
-                Messages.RemoveAt(i);
-            }
-
-            // 插入一条压缩摘要消息（标记为 AI 消息，但 content 以 📋 前缀标识）
-            var summaryMsg = new ChatMsg
-            {
-                Content = $"📋 历史摘要：{summary}",
-                IsUser = false
-            };
-            Messages.Insert(0, summaryMsg);
-
-            _ = ChatStore.Instance.DeleteMessagesAsync(removedIds);
-            _ = ChatStore.Instance.SaveMessageAsync(summaryMsg);
-
-            UpdateContextLabel();
-            ScrollToBottom();
-        });
-    }
-
-    // ────────────────────────── 多模态：语音 / 图片 / 文生图 ──────────────────────────
-
-    /// <summary>点击语音按钮：系统语音识别优先，失败走听觉模型 API。</summary>
-    private async void OnVoiceClicked(object? sender, EventArgs e)
-    {
-        try
-        {
-            string? text = await RecognizeVoiceAsync();
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                await DisplayAlert("语音识别", "没有识别到内容", "确定");
-                return;
-            }
-            txtInput.Text = text;
-            await DisplayAlert("语音识别", $"识别结果：{text}\n\n确认后点击发送。", "确定");
-        }
-        catch (Exception ex)
-        {
-            await DisplayAlert("语音识别失败", ex.Message, "确定");
-        }
+        if (string.IsNullOrEmpty(text)) return 0;
+        int chars = text.Length;
+        // 中文 1 字≈1.1 token，其它 4 字符≈1 token
+        double tokens = 0;
+        tokens += chars * (1.0 / 3.0) * 1.1;       // 中文字符占比 1/3
+        tokens += chars * (2.0 / 3.0) * 0.25;      // 其余字符占比 2/3
+        return (int)Math.Round(tokens) + 32;       // 基础头信息附加
     }
 
     /// <summary>语音识别：优先 Android 系统 SpeechRecognizer，失败回退听觉模型 API。</summary>
@@ -1476,6 +1484,184 @@ public partial class ChatPage : ContentPage
         await SpeakIfEnabledAsync(aiBubble.Content);
     }
 
+    /// <summary>点击思考过程折叠头部：展开/收起。</summary>
+    private void OnThinkingHeaderTapped(object? sender, EventArgs e)
+    {
+        if (sender is not BindableObject bo) return;
+        if (bo.BindingContext is ChatMsg msg)
+            msg.ThinkingExpanded = !msg.ThinkingExpanded;
+    }
+
+    /// <summary>点击 Agent 过程区头部：展开/收起（折叠后仍可点开查看明细）。</summary>
+    private void OnAgentHeaderTapped(object? sender, EventArgs e)
+    {
+        if (sender is not BindableObject bo) return;
+        if (bo.BindingContext is ChatMsg msg && msg.AgentRun != null)
+        {
+            msg.AgentRun.Collapsed = !msg.AgentRun.Collapsed;
+            msg.NotifyAgentChanged();
+        }
+    }
+
+    // ─────────── 权限气泡（盾牌） ───────────
+
+    /// <summary>点击盾牌图标：展开/收起权限面板。</summary>
+    private void OnShieldTapped(object? sender, EventArgs e)
+    {
+        permPanel.IsVisible = !permPanel.IsVisible;
+        if (permPanel.IsVisible) RefreshPermPanel();
+    }
+
+    /// <summary>刷新权限面板的勾选状态与摘要。</summary>
+    private void RefreshPermPanel()
+    {
+        int level = AppSettings.FileAccessLevel;
+        bool granted = StorageAccess.IsAllFilesGranted();
+
+        chkReadWs.Text = level == 1 ? "●" : "○";
+        chkWriteWs.Text = level == 2 ? "●" : "○";
+        chkReadDisk.Text = level == 3 ? "●" : "○";
+        chkWriteDisk.Text = level == 4 ? "●" : "○";
+
+        // 选中项高亮，未选中置灰
+        icoReadWs.Opacity = level == 1 ? 1 : 0.45;
+        icoWriteWs.Opacity = level == 2 ? 1 : 0.45;
+
+        chkBrowser.Text = AppSettings.BrowserPermission ? "☑" : "☐";
+        chkFullAccess.Text = AppSettings.FullAccess ? "☑" : "☐";
+
+        // 完全访问时上面四个单选置灰（已被覆盖）
+        permSingleGroup.Opacity = AppSettings.FullAccess ? 0.4 : 1;
+
+        // 全盘相关项：没有系统权限时一律置灰，避免"假放开"
+        bool diskDim = AppSettings.FullAccess || !granted;
+        permDiskGroup.Opacity = diskDim ? 0.4 : 1;
+        rowFullAccess.Opacity = granted ? 1 : 0.4;
+
+        // 没系统权限 → 顶部亮出引导条
+        storageWarnBox.IsVisible = !granted;
+        if (!granted)
+            lblStorageWarn.Text = "尚未授予系统「所有文件访问」，全盘读写与完全访问无法生效。"
+                                + "开启后 Ta 才能读写内部存储、生成的文件你也能在文件管理器里看到。";
+
+        // 摘要：说清当前真实状态 + 边界
+        var sb = new StringBuilder();
+        if (!granted)
+        {
+            sb.Append("当前仅能访问工作区。");
+            sb.Append(StorageAccess.WorkspaceVisible
+                ? "工作区在公共存储，文件管理器可见。"
+                : "工作区在应用私有目录，文件管理器看不到，可用下方「导出」搬到 Download。");
+        }
+        else if (AppSettings.FullAccess)
+        {
+            sb.Append("完全访问已开启：所有限制放开，Ta 可读写公共存储任意位置。");
+        }
+        else
+        {
+            sb.Append("权限：").Append(AppSettings.FileAccessDesc).Append("。");
+            sb.Append(StorageAccess.WorkspaceVisible
+                ? "工作区在公共存储，文件管理器可见。"
+                : "工作区在应用私有目录，外部不可见。");
+        }
+        sb.Append("\n注：即使全盘权限也只覆盖公共存储，读不到其他 App 的私有目录。");
+        lblPermSummary.Text = sb.ToString();
+    }
+
+    /// <summary>选择文件权限级别（四选一互斥）。</summary>
+    private async void OnPermLevelTapped(object? sender, EventArgs e)
+    {
+        if (AppSettings.FullAccess)
+        {
+            await DisplayAlert("完全访问已开启", "当前是「完全访问」模式，已覆盖所有文件权限。请先取消完全访问再单独选择。", "好");
+            return;
+        }
+        if (sender is not TapGestureRecognizer tg || tg.CommandParameter is not string s) return;
+        if (!int.TryParse(s, out var level)) return;
+
+        // 全盘级别（3/4）需要系统真实权限，先拦一道并引导
+        if (level >= 3 && !StorageAccess.IsAllFilesGranted())
+        {
+            await PromptGrantStorageAsync();
+            return;
+        }
+
+        // 再点一次同一项 = 取消授权（回到未授权）
+        AppSettings.FileAccessLevel = AppSettings.FileAccessLevel == level ? 0 : level;
+        RefreshPermPanel();
+    }
+
+    /// <summary>切换浏览器权限。</summary>
+    private void OnPermBrowserTapped(object? sender, EventArgs e)
+    {
+        AppSettings.BrowserPermission = !AppSettings.BrowserPermission;
+        RefreshPermPanel();
+    }
+
+    /// <summary>切换完全访问（高风险，需二次确认 + 系统权限前置检测）。</summary>
+    private async void OnPermFullAccessTapped(object? sender, EventArgs e)
+    {
+        if (!AppSettings.FullAccess)
+        {
+            // 没有系统「所有文件访问」权限时不允许开启，避免出现"假放开"
+            if (!StorageAccess.IsAllFilesGranted())
+            {
+                await PromptGrantStorageAsync();
+                return;
+            }
+
+            bool ok = await DisplayAlert("⚠️ 开启完全访问",
+                "开启后 Ta 可以读写公共存储上任意文件、不受目录限制，风险很高。\n\n"
+                + "请确认你完全信任当前模型与接口（中间的 API 服务商也能看到文件内容）。\n\n"
+                + "注意：该权限只能访问公共存储，读不到其他 App 的私有目录。",
+                "我确认", "取消");
+            if (!ok) return;
+        }
+        AppSettings.FullAccess = !AppSettings.FullAccess;
+        RefreshPermPanel();
+    }
+
+    /// <summary>点「去开启」：跳系统设置申请「所有文件访问」。</summary>
+    private void OnGrantStorageTapped(object? sender, EventArgs e) => StorageAccess.RequestPermission();
+
+    /// <summary>
+    /// 全盘权限缺失时的统一引导：说清为什么、给出跳转按钮。
+    /// 用户从系统设置回来后，OnAppearing 会重新刷新面板状态。
+    /// </summary>
+    private async Task PromptGrantStorageAsync()
+    {
+        bool go = await DisplayAlert("需要系统权限",
+            "「读取/修改全盘文件」和「完全访问」需要 Android 系统的「所有文件访问」权限，"
+            + "当前尚未授予，所以这两个选项还不能生效。\n\n"
+            + "点「去开启」会跳到系统设置，找到「青阳AI」并打开「允许访问所有文件」，"
+            + "回来后权限就会自动生效。\n\n"
+            + "（开启后 Ta 生成的文件会放在 内部存储/QingYangAI/WorkSpace，你在文件管理器里能直接看到）",
+            "去开启", "暂不");
+        if (go) StorageAccess.RequestPermission();
+    }
+
+    /// <summary>把工作区文件导出到公共 Download 目录。</summary>
+    private async void OnExportWorkspaceTapped(object? sender, EventArgs e)
+    {
+        if (StorageAccess.WorkspaceVisible)
+        {
+            await DisplayAlert("无需导出",
+                $"当前工作区已经在公共存储里，文件管理器可以直接看到：\n\n{StorageAccess.ToDisplay(AppSettings.EffectiveWorkspacePath)}",
+                "好");
+            return;
+        }
+
+        if (!StorageAccess.IsAllFilesGranted())
+        {
+            await PromptGrantStorageAsync();
+            return;
+        }
+
+        var (ok, msg) = await StorageAccess.ExportWorkspaceAsync();
+        await DisplayAlert(ok ? "导出完成" : "导出失败", msg, "好");
+        RefreshPermPanel();
+    }
+
     /// <summary>点击图片框架：进入全屏鉴赏模式。</summary>
     private async void OnImageFrameTapped(object? sender, EventArgs e)
     {
@@ -1571,6 +1757,52 @@ public partial class ChatPage : ContentPage
             UpdateContextLabel();
         }
     }
+
+    /// <summary>语音播放：如果开启 TTS 且自动播放，则在回复完成后朗读。</summary>
+    private async Task SpeakIfEnabledAsync(string text)
+    {
+        if (!string.IsNullOrWhiteSpace(text) && AppSettings.TtsEnabled && AppSettings.TtsAutoPlay)
+        {
+            try { await TtsPlayer.PlayAsync(text); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[TTS] 播放失败: {ex.Message}"); }
+        }
+    }
+
+#if ANDROID
+/// <summary>Android 系统语音识别结果监听。</summary>
+public class SystemRecognizerListener : Java.Lang.Object, Android.Speech.IRecognitionListener
+{
+    private readonly TaskCompletionSource<string?> _tcs;
+    private readonly StringBuilder _sb = new();
+
+    public SystemRecognizerListener(TaskCompletionSource<string?> tcs) => _tcs = tcs;
+
+    public void OnReadyForSpeech(Android.OS.Bundle? p0) { }
+    public void OnBeginningOfSpeech() { }
+    public void OnRmsChanged(float p0) { }
+    public void OnBufferReceived(byte[]? p0) { }
+    public void OnEndOfSpeech() => _tcs.TrySetResult(_sb.ToString());
+    public void OnError(Android.Speech.SpeechRecognizerError p0) =>
+        _tcs.TrySetException(new Exception("系统语音识别错误：" + p0));
+    public void OnEvent(int p0, Android.OS.Bundle? p1) { }
+    public void OnPartialResults(Android.OS.Bundle? p0) => Collect(p0);
+    public void OnResults(Android.OS.Bundle? p0)
+    {
+        Collect(p0);
+        _tcs.TrySetResult(_sb.ToString());
+    }
+
+    private void Collect(Android.OS.Bundle? bundle)
+    {
+        var matches = bundle?.GetStringArrayList("android.speech.extra.RESULTS_RECOGNITION");
+        if (matches == null) return;
+        foreach (var m in matches)
+        {
+            if (!string.IsNullOrEmpty(m)) _sb.Append(m);
+        }
+    }
+}
+#endif
 }
 
 public class ChatMsg : INotifyPropertyChanged
@@ -1597,6 +1829,9 @@ public class ChatMsg : INotifyPropertyChanged
 
     /// <summary>是否为后台主动发来的关心消息。</summary>
     public bool IsProactive { get; set; }
+
+    /// <summary>是否为压缩摘要消息（替代早期历史消息）。</summary>
+    public bool IsCompressed { get; set; }
 
     private bool _isWaiting;
 
@@ -1739,6 +1974,67 @@ public class ChatMsg : INotifyPropertyChanged
     [JsonIgnore]
     public bool HasThinking => !string.IsNullOrEmpty(_thinking);
 
+    // ─────────── Agent 循环过程（单行缩略 + 折叠） ───────────
+
+    private AgentRun? _agentRun;
+
+    /// <summary>本条消息的 Agent 循环过程（未开启 Agent 模式时为 null）。</summary>
+    [JsonIgnore]
+    public AgentRun? AgentRun
+    {
+        get => _agentRun;
+        set
+        {
+            _agentRun = value;
+            NotifyAgentChanged();
+        }
+    }
+
+    /// <summary>是否显示 Agent 过程区。</summary>
+    [JsonIgnore]
+    public bool HasAgentRun => _agentRun != null && _agentRun.Steps.Count > 0;
+
+    /// <summary>Agent 过程区标题：运行中显示当前动作，结束后显示步骤总账（▸/▾ 表示能否展开）。</summary>
+    [JsonIgnore]
+    public string AgentHeaderText
+    {
+        get
+        {
+            if (_agentRun == null) return "";
+            // 运行中不给箭头（还没内容可展）；结束后给箭头提示可点开明细
+            if (!_agentRun.Finished) return _agentRun.CollapsedSummary;
+            return _agentRun.CollapsedSummary + (_agentRun.Collapsed ? "  ▸" : "  ▾");
+        }
+    }
+
+    /// <summary>Agent 步骤明细（展开时显示，一行一步）。</summary>
+    [JsonIgnore]
+    public string AgentStepsText => _agentRun?.FullText ?? "";
+
+    /// <summary>过程区是否展开。</summary>
+    [JsonIgnore]
+    public bool AgentExpanded => _agentRun != null && !_agentRun.Collapsed;
+
+    /// <summary>折叠时是否显示明细。</summary>
+    [JsonIgnore]
+    public bool AgentDetailsVisible => HasAgentRun && AgentExpanded;
+
+    /// <summary>任务是否仍在执行中（标题流光）。</summary>
+    [JsonIgnore]
+    public bool AgentRunning => _agentRun != null && !_agentRun.Finished;
+
+    /// <summary>把 Agent 过程区的所有绑定属性一次性通知刷新。</summary>
+    public void NotifyAgentChanged()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AgentRun)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasAgentRun)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AgentHeaderText)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AgentStepsText)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AgentExpanded)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AgentDetailsVisible)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AgentRunning)));
+    }
+
     /// <summary>思考过程与下方内容（终端或正文）之间的内嵌分割线是否显示。</summary>
     [JsonIgnore]
     public bool ShowThinkingDivider => HasThinking && (HasTerminalHeader || !string.IsNullOrEmpty(_content));
@@ -1769,8 +2065,13 @@ public class ChatMsg : INotifyPropertyChanged
             if (_isThinkingActive == value) return;
             _isThinkingActive = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsThinkingActive)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ThinkingStatusText)));
         }
     }
+
+    /// <summary>正文是否已开始（决定思考状态文字："思考中…" → "思考结束·用时N秒"）。</summary>
+    [JsonIgnore]
+    public bool ContentStarted => !string.IsNullOrEmpty(_content);
 
     /// <summary>终端是否正在运行（有终端头部且未完成 → 步骤行流光）。</summary>
     [JsonIgnore]
@@ -1806,24 +2107,29 @@ public class ChatMsg : INotifyPropertyChanged
         get => _thinkingSeconds;
         set
         {
-            if (Math.Abs(_thinkingSeconds - value) < 0.1) return;
+            if (Math.Abs(_thinkingSeconds - value) < 0.05) return;
             _thinkingSeconds = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ThinkingSeconds)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ThinkingStatusText)));
         }
     }
 
-    /// <summary>思考状态文字：思考已完成 用时x秒 / 用时xx分xx秒。</summary>
+    /// <summary>
+    /// 思考状态文字：
+    /// 思考过程中 →「思考中…」（流光下动态跳动）；
+    /// 正文开始后 →「思考结束·用时N秒」（只计思考过程，正文不计入）。
+    /// </summary>
     [JsonIgnore]
     public string ThinkingStatusText
     {
         get
         {
+            if (_isThinkingActive && !ContentStarted) return "思考中…";
             if (_thinkingSeconds < 60)
-                return $"思考已完成 用时{_thinkingSeconds:F0}秒";
+                return $"思考结束·用时{_thinkingSeconds:F0}秒";
             int min = (int)_thinkingSeconds / 60;
             int sec = (int)_thinkingSeconds % 60;
-            return $"思考已完成 用时{min}分{sec}秒";
+            return $"思考结束·用时{min}分{sec}秒";
         }
     }
 
@@ -1837,6 +2143,8 @@ public class ChatMsg : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Content)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasContent)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowThinkingDivider)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ContentStarted)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ThinkingStatusText)));
         }
     }
 
@@ -1939,7 +2247,9 @@ public class ChatMsg : INotifyPropertyChanged
 public class StreamChunk
 {
     public List<ChoiceItem>? choices { get; set; }
-    public UsageItem? usage { get; set; }
+
+    /// <summary>原始 usage 节点（保留成 JsonElement，交给 TokenUsageMapper 做多厂商字段映射）。</summary>
+    public JsonElement? usage { get; set; }
 }
 
 /// <summary>ConsumeSseAsync 的收流结果。</summary>
@@ -1948,6 +2258,10 @@ public sealed class SseConsumeResult
     /// <summary>网络侧收到的完整正文（含尚未上屏的部分）。</summary>
     public StringBuilder Buffer { get; } = new();
     public DateTime? ThinkingStart { get; set; }
+    /// <summary>最后一个思考字到达的时刻（思考用时的终点，正文不计入）。</summary>
+    public DateTime? ThinkingEnd { get; set; }
+    /// <summary>思考用时是否已冻结（正文已开始）。</summary>
+    public bool ThinkingFrozen { get; set; }
     public bool ThinkingActive { get; set; }
     public bool ContentStarted { get; set; }
     /// <summary>网络侧是否已收完流。</summary>
@@ -1958,6 +2272,8 @@ public sealed class SseConsumeResult
     public bool CancelledForApi { get; set; }
     /// <summary>正文中出现 {img:"..."} 指令，已提前断流。</summary>
     public bool CancelledForImage { get; set; }
+    /// <summary>正文中出现 {browse:"..."} 指令，已提前断流。</summary>
+    public bool CancelledForBrowse { get; set; }
 }
 public class ChoiceItem
 {
@@ -2005,39 +2321,3 @@ public static class CacheUsage
         return (hit, miss);
     }
 }
-
-#if ANDROID
-/// <summary>Android 系统语音识别结果监听。</summary>
-public class SystemRecognizerListener : Java.Lang.Object, Android.Speech.IRecognitionListener
-{
-    private readonly TaskCompletionSource<string?> _tcs;
-    private readonly StringBuilder _sb = new();
-
-    public SystemRecognizerListener(TaskCompletionSource<string?> tcs) => _tcs = tcs;
-
-    public void OnReadyForSpeech(Android.OS.Bundle? p0) { }
-    public void OnBeginningOfSpeech() { }
-    public void OnRmsChanged(float p0) { }
-    public void OnBufferReceived(byte[]? p0) { }
-    public void OnEndOfSpeech() => _tcs.TrySetResult(_sb.ToString());
-    public void OnError(Android.Speech.SpeechRecognizerError p0) =>
-        _tcs.TrySetException(new Exception("系统语音识别错误：" + p0));
-    public void OnEvent(int p0, Android.OS.Bundle? p1) { }
-    public void OnPartialResults(Android.OS.Bundle? p0) => Collect(p0);
-    public void OnResults(Android.OS.Bundle? p0)
-    {
-        Collect(p0);
-        _tcs.TrySetResult(_sb.ToString());
-    }
-
-    private void Collect(Android.OS.Bundle? bundle)
-    {
-        var matches = bundle?.GetStringArrayList(Android.Speech.SpeechRecognizer.ResultsRecognition);
-        if (matches == null) return;
-        foreach (var m in matches)
-        {
-            if (!string.IsNullOrEmpty(m)) _sb.Append(m);
-        }
-    }
-}
-#endif

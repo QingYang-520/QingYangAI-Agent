@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:local="clr-namespace:青阳AI"
+             x:Class="青阳AI.QuickStartPage"
+             Title="快速开始"
+             BackgroundColor="#181211">
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- ══════════ 顶部：标题 + 步骤指示 ══════════ -->
+        <VerticalStackLayout Grid.Row="0" Padding="20,16,20,8" Spacing="8">
+            <Label Text="欢迎来到青阳AI" FontSize="22" FontAttributes="Bold" TextColor="White"/>
+            <Label x:Name="lblStep" Text="第 1 / 2 步 · 接上一个模型就能聊" FontSize="13" TextColor="#9E8D8C"/>
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="6" HeightRequest="4">
+                <Border x:Name="barStep1" Grid.Column="0" BackgroundColor="#FBB5B2" StrokeThickness="0" StrokeShape="RoundRectangle 2"/>
+                <Border x:Name="barStep2" Grid.Column="1" BackgroundColor="#3A3333" StrokeThickness="0" StrokeShape="RoundRectangle 2"/>
+            </Grid>
+        </VerticalStackLayout>
+
+        <!-- ══════════ 中部：两个步骤叠放（切换时淡入淡出 + 横向位移）══════════ -->
+        <Grid Grid.Row="1">
+
+            <!-- ─────── 第 1 页：模型配置 ─────── -->
+            <ScrollView x:Name="stepModel">
+                <VerticalStackLayout Padding="16,8,16,8" Spacing="14">
+
+                    <!-- 文本对话模型（独立气泡，默认展开） -->
+                    <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,10">
+                        <VerticalStackLayout Spacing="0">
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnToggleQsChatBubble"/>
+                                </Grid.GestureRecognizers>
+                                <local:MorphIcon x:Name="qsChatArrow" Icon="ChevronDown" IconColor="#D5C2C1" IconSize="16" StrokeWidth="2.5" VerticalOptions="Center"/>
+                                <Label Grid.Column="1" Text="文本对话模型" TextColor="White" FontSize="16" FontAttributes="Bold" VerticalOptions="Center"/>
+                            </Grid>
+
+                            <VerticalStackLayout x:Name="qsChatBubbleContent" Spacing="10" Margin="0,12,0,0">
+                                <Label Text="API Key" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                    <Entry x:Name="qsEntApiKey" Grid.Column="0" Placeholder="sk-..." PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" IsPassword="true"/>
+                                    <Button Grid.Column="1" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteApiKeyClicked"/>
+                                    <Button Grid.Column="2" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearApiKeyClicked"/>
+                                </Grid>
+                                <Label Text="API URL" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                    <Entry x:Name="qsEntApiUrl" Grid.Column="0" Placeholder="https://.../chat/completions" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                                    <Button Grid.Column="1" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteApiUrlClicked"/>
+                                    <Button Grid.Column="2" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearApiUrlClicked"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <Label Text="模型" FontSize="13" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                                    <Button Grid.Column="1" x:Name="qsBtnFetchModels" Text="获取模型列表" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnFetchChatModelsClicked"/>
+                                </Grid>
+                                <Picker x:Name="qsPicModel" Title="选择模型" BackgroundColor="#2F2928" TextColor="White"/>
+                                <Label Text="思考模型（深度思考时用，可选）" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                <Entry x:Name="qsEntThinkingModel" Placeholder="留空默认 deepseek-reasoner；换厂商填对方思考模型名" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <!-- 更多模型（一个下拉气泡括起来，默认关闭） -->
+                    <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,10">
+                        <VerticalStackLayout Spacing="0">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                <Grid.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnToggleQsMoreBubble"/>
+                                </Grid.GestureRecognizers>
+                                <local:MorphIcon x:Name="qsMoreArrow" Icon="ChevronRight" IconColor="#D5C2C1" IconSize="16" StrokeWidth="2.5" VerticalOptions="Center"/>
+                                <Label Grid.Column="1" Text="更多模型" TextColor="White" FontSize="16" FontAttributes="Bold" VerticalOptions="Center"/>
+                                <Label Grid.Column="2" Text="可选" FontSize="12" TextColor="#9E8D8C" VerticalOptions="Center"/>
+                            </Grid>
+
+                            <VerticalStackLayout x:Name="qsMoreBubbleContent" IsVisible="False" Spacing="10" Margin="0,12,0,0">
+
+                                <!-- 文生图 -->
+                                <Border BackgroundColor="#181211" StrokeThickness="1" Stroke="#2F2928" StrokeShape="RoundRectangle 12" Padding="12,8">
+                                    <VerticalStackLayout Spacing="0">
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                            <Grid.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnToggleQsImgBubble"/>
+                                            </Grid.GestureRecognizers>
+                                            <local:MorphIcon x:Name="qsImgArrow" Icon="ChevronRight" IconColor="#D5C2C1" IconSize="14" StrokeWidth="2.5" VerticalOptions="Center"/>
+                                            <Label Grid.Column="1" Text="文生图（画画 / Ta的头像）" TextColor="White" FontSize="14" FontAttributes="Bold" VerticalOptions="Center"/>
+                                        </Grid>
+                                        <VerticalStackLayout x:Name="qsImgBubbleContent" IsVisible="False" Spacing="10" Margin="0,10,0,0">
+                                            <Label Text="API URL" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                                <Entry x:Name="qsEntImgApiUrl" Grid.Column="0" Placeholder="https://.../images/generations" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                                                <Button Grid.Column="1" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteImgUrlClicked"/>
+                                                <Button Grid.Column="2" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearImgUrlClicked"/>
+                                            </Grid>
+                                            <Label Text="API Key" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                                <Entry x:Name="qsEntImgApiKey" Grid.Column="0" Placeholder="sk-..." PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" IsPassword="true"/>
+                                                <Button Grid.Column="1" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteImgKeyClicked"/>
+                                                <Button Grid.Column="2" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearImgKeyClicked"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                                <Label Text="模型" FontSize="13" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                                                <Button Grid.Column="1" x:Name="qsBtnFetchImgModels" Text="获取模型列表" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnFetchImgModelsClicked"/>
+                                            </Grid>
+                                            <Picker x:Name="qsPicImgModel" Title="选择模型" BackgroundColor="#2F2928" TextColor="White"/>
+                                        </VerticalStackLayout>
+                                    </VerticalStackLayout>
+                                </Border>
+
+                                <!-- 听觉 -->
+                                <Border BackgroundColor="#181211" StrokeThickness="1" Stroke="#2F2928" StrokeShape="RoundRectangle 12" Padding="12,8">
+                                    <VerticalStackLayout Spacing="0">
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                            <Grid.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnToggleQsAudioBubble"/>
+                                            </Grid.GestureRecognizers>
+                                            <local:MorphIcon x:Name="qsAudioArrow" Icon="ChevronRight" IconColor="#D5C2C1" IconSize="14" StrokeWidth="2.5" VerticalOptions="Center"/>
+                                            <Label Grid.Column="1" Text="语音转文字（语音输入回退）" TextColor="White" FontSize="14" FontAttributes="Bold" VerticalOptions="Center"/>
+                                        </Grid>
+                                        <VerticalStackLayout x:Name="qsAudioBubbleContent" IsVisible="False" Spacing="10" Margin="0,10,0,0">
+                                            <Label Text="API URL" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                                <Entry x:Name="qsEntAudioApiUrl" Grid.Column="0" Placeholder="https://.../audio/transcriptions" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                                                <Button Grid.Column="1" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteAudioUrlClicked"/>
+                                                <Button Grid.Column="2" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearAudioUrlClicked"/>
+                                            </Grid>
+                                            <Label Text="API Key" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                                <Entry x:Name="qsEntAudioApiKey" Grid.Column="0" Placeholder="sk-..." PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" IsPassword="true"/>
+                                                <Button Grid.Column="1" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteAudioKeyClicked"/>
+                                                <Button Grid.Column="2" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearAudioKeyClicked"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                                <Label Text="模型" FontSize="13" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                                                <Button Grid.Column="1" x:Name="qsBtnFetchAudioModels" Text="获取模型列表" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnFetchAudioModelsClicked"/>
+                                            </Grid>
+                                            <Picker x:Name="qsPicAudioModel" Title="选择模型" BackgroundColor="#2F2928" TextColor="White"/>
+                                        </VerticalStackLayout>
+                                    </VerticalStackLayout>
+                                </Border>
+
+                                <!-- 视觉 -->
+                                <Border BackgroundColor="#181211" StrokeThickness="1" Stroke="#2F2928" StrokeShape="RoundRectangle 12" Padding="12,8">
+                                    <VerticalStackLayout Spacing="0">
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                            <Grid.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnToggleQsVisionBubble"/>
+                                            </Grid.GestureRecognizers>
+                                            <local:MorphIcon x:Name="qsVisionArrow" Icon="ChevronRight" IconColor="#D5C2C1" IconSize="14" StrokeWidth="2.5" VerticalOptions="Center"/>
+                                            <Label Grid.Column="1" Text="视觉理解（看图说话）" TextColor="White" FontSize="14" FontAttributes="Bold" VerticalOptions="Center"/>
+                                        </Grid>
+                                        <VerticalStackLayout x:Name="qsVisionBubbleContent" IsVisible="False" Spacing="10" Margin="0,10,0,0">
+                                            <Label Text="API URL" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                                <Entry x:Name="qsEntVisionApiUrl" Grid.Column="0" Placeholder="https://.../chat/completions" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                                                <Button Grid.Column="1" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteVisionUrlClicked"/>
+                                                <Button Grid.Column="2" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearVisionUrlClicked"/>
+                                            </Grid>
+                                            <Label Text="API Key" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                                <Entry x:Name="qsEntVisionApiKey" Grid.Column="0" Placeholder="sk-..." PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" IsPassword="true"/>
+                                                <Button Grid.Column="1" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteVisionKeyClicked"/>
+                                                <Button Grid.Column="2" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearVisionKeyClicked"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                                <Label Text="模型" FontSize="13" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                                                <Button Grid.Column="1" x:Name="qsBtnFetchVisionModels" Text="获取模型列表" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnFetchVisionModelsClicked"/>
+                                            </Grid>
+                                            <Picker x:Name="qsPicVisionModel" Title="选择模型" BackgroundColor="#2F2928" TextColor="White"/>
+                                        </VerticalStackLayout>
+                                    </VerticalStackLayout>
+                                </Border>
+
+                                <!-- 文字转语音 -->
+                                <Border BackgroundColor="#181211" StrokeThickness="1" Stroke="#2F2928" StrokeShape="RoundRectangle 12" Padding="12,8">
+                                    <VerticalStackLayout Spacing="0">
+                                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                            <Grid.GestureRecognizers>
+                                                <TapGestureRecognizer Tapped="OnToggleQsTtsBubble"/>
+                                            </Grid.GestureRecognizers>
+                                            <local:MorphIcon x:Name="qsTtsArrow" Icon="ChevronRight" IconColor="#D5C2C1" IconSize="14" StrokeWidth="2.5" VerticalOptions="Center"/>
+                                            <Label Grid.Column="1" Text="语音回复（Ta开口说话）" TextColor="White" FontSize="14" FontAttributes="Bold" VerticalOptions="Center"/>
+                                        </Grid>
+                                        <VerticalStackLayout x:Name="qsTtsBubbleContent" IsVisible="False" Spacing="10" Margin="0,10,0,0">
+                                            <Label Text="API URL" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                                <Entry x:Name="qsEntTtsApiUrl" Grid.Column="0" Placeholder="https://.../audio/speech" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                                                <Button Grid.Column="1" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteTtsUrlClicked"/>
+                                                <Button Grid.Column="2" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearTtsUrlClicked"/>
+                                            </Grid>
+                                            <Label Text="API Key" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                                <Entry x:Name="qsEntTtsApiKey" Grid.Column="0" Placeholder="sk-..." PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" IsPassword="true"/>
+                                                <Button Grid.Column="1" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteTtsKeyClicked"/>
+                                                <Button Grid.Column="2" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearTtsKeyClicked"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                                <Label Text="模型" FontSize="13" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                                                <Button Grid.Column="1" x:Name="qsBtnFetchTtsModels" Text="获取模型列表" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnFetchTtsModelsClicked"/>
+                                            </Grid>
+                                            <Picker x:Name="qsPicTtsModel" Title="选择模型" BackgroundColor="#2F2928" TextColor="White"/>
+                                            <Label Text="音色（voice）" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                                            <Entry x:Name="qsEntTtsVoice" Placeholder="alloy / echo / nova …（按接口支持的音色名填写）" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                                        </VerticalStackLayout>
+                                    </VerticalStackLayout>
+                                </Border>
+
+                            </VerticalStackLayout>
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Label Text="不确定填什么？先只填文本对话模型也能正常聊天，其他随时可以在设置里补。"
+                           FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                </VerticalStackLayout>
+            </ScrollView>
+
+            <!-- ─────── 第 2 页：人设配置（排版与设置页一致）─────── -->
+            <ScrollView x:Name="stepPersona" IsVisible="False" Opacity="0">
+                <VerticalStackLayout Padding="16,8,16,8" Spacing="10">
+
+                    <Label Text="💬 Ta的人设" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                    <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                        <VerticalStackLayout Spacing="12">
+
+                            <HorizontalStackLayout Spacing="0">
+                                <Label x:Name="qsLblPersonaTitle" Text="人设调节" FontSize="15" FontAttributes="Bold" TextColor="White"/>
+                                <Label x:Name="qsLblPersonaSub" Text="" FontSize="15" TextColor="#D5C2C1" IsVisible="False"/>
+                            </HorizontalStackLayout>
+
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                                <Border x:Name="qsBubblePreset" BackgroundColor="#181211" StrokeThickness="1" Stroke="#FBB5B2"
+                                        StrokeShape="RoundRectangle 10" Padding="10,8" HorizontalOptions="Fill">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnQsPresetTapped"/>
+                                    </Border.GestureRecognizers>
+                                    <Label x:Name="qsLblPreset" Text="官方预设" FontSize="13" TextColor="White" HorizontalOptions="Center"/>
+                                </Border>
+                                <Border x:Name="qsBubbleCustom" Grid.Column="1" BackgroundColor="#181211" StrokeThickness="1" Stroke="#555555"
+                                        StrokeShape="RoundRectangle 10" Padding="10,8" HorizontalOptions="Fill">
+                                    <Border.GestureRecognizers>
+                                        <TapGestureRecognizer Tapped="OnQsCustomTapped"/>
+                                    </Border.GestureRecognizers>
+                                    <Label x:Name="qsLblCustom" Text="自定义" FontSize="13" TextColor="#D5C2C1" HorizontalOptions="Center"/>
+                                </Border>
+                            </Grid>
+
+                            <Border x:Name="qsPersonaContentBox" BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,8">
+                                <VerticalStackLayout>
+                                    <VerticalStackLayout x:Name="qsPanelPreset" Spacing="6">
+                                        <Picker x:Name="qsPicPersonality" Title="选择性格" BackgroundColor="#2F2928" TextColor="White"/>
+                                        <Label Text="性格决定Ta的情感底色和主动行为" FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+                                    </VerticalStackLayout>
+                                    <VerticalStackLayout x:Name="qsPanelCustom" Spacing="6" IsVisible="False">
+                                        <Editor x:Name="qsEdtPersona" Placeholder="例如：你是一个温柔耐心的学习助手…" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" HeightRequest="140"/>
+                                    </VerticalStackLayout>
+                                </VerticalStackLayout>
+                            </Border>
+
+                        </VerticalStackLayout>
+                    </Border>
+
+                    <Label Text="人设只是给 Ta 的性格底色，随时可以在设置里改。"
+                           FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                </VerticalStackLayout>
+            </ScrollView>
+        </Grid>
+
+        <!-- ══════════ 底部：左下角常驻「跳过」+ 右侧导航按钮 ══════════ -->
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10" Padding="20,6,20,18">
+            <Label Grid.Column="0" Text="跳过" FontSize="15" TextColor="#9E8D8C" VerticalOptions="Center">
+                <Label.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnSkipTapped"/>
+                </Label.GestureRecognizers>
+            </Label>
+            <Button x:Name="btnPrev" Grid.Column="2" Text="上一步" FontSize="14" Padding="18,8"
+                    BackgroundColor="#3A3333" TextColor="White" CornerRadius="12"
+                    IsVisible="False" Clicked="OnPrevClicked"/>
+            <Button x:Name="btnNext" Grid.Column="3" Text="下一步" FontSize="14" Padding="24,8"
+                    BackgroundColor="#FBB5B2" TextColor="#181211" CornerRadius="12" Clicked="OnNextClicked"/>
+        </Grid>
+
+    </Grid>
+</ContentPage>

@@ -11,6 +11,8 @@ public static class InstructionParser
     public static readonly string[] Markers =
     {
         "{cmd:\"", "{api:\"", "{img:\"", "{mood:\"", "{avatar:\"", "{say:\"",
+        "{read:\"", "{write:\"", "{append:\"", "{edit:\"", "{ls:\"", "{del:\"",
+        "{done:\"", "{todo:\"", "{plan:\"",
     };
 
     /// <summary>提取 content 里所有 {marker:"值"} 的值。</summary>

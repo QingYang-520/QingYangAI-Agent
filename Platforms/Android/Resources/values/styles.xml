@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- 覆盖 MAUI 默认启动屏：纯色背景，不显示任何 LOGO 图标 -->
+    <style name="Maui.SplashTheme" parent="Maui.MainTheme">
+        <!-- Android 12+ 启动屏背景色 -->
+        <item name="android:windowSplashScreenBackground">#1E1E1E</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#1E1E1E</item>
+        <!-- 兼容旧系统的启动画面 -->
+        <item name="android:windowBackground">#1E1E1E</item>
+    </style>
+</resources>

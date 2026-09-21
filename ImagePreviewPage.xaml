@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:local="clr-namespace:青阳AI"
+             x:Class="青阳AI.ImagePreviewPage"
+             Title="图片预览"
+             BackgroundColor="#000000"
+             NavigationPage.HasNavigationBar="False">
+    <Grid RowDefinitions="Auto,*,Auto">
+
+        <!-- 顶栏：返回 + 标题 + 下载 -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Padding="8,10"
+              BackgroundColor="#1C1C1C">
+            <Border Grid.Column="0"
+                    BackgroundColor="Transparent"
+                    StrokeThickness="0"
+                    Padding="10,4"
+                    VerticalOptions="Center">
+                <Border.GestureRecognizers>
+                    <TapGestureRecognizer Tapped="OnBackClicked"/>
+                </Border.GestureRecognizers>
+                <local:MorphIcon Icon="ChevronLeft" IconSize="22" IconColor="White" StrokeWidth="2.5"/>
+            </Border>
+            <Label Grid.Column="1"
+                   Text="图片鉴赏"
+                   FontSize="16"
+                   FontAttributes="Bold"
+                   TextColor="White"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center"/>
+            <Button Grid.Column="2"
+                    Text="下载"
+                    FontSize="14"
+                    TextColor="White"
+                    BackgroundColor="#7B68EE"
+                    Padding="14,6"
+                    Clicked="OnDownloadClicked"/>
+        </Grid>
+
+        <!-- 图片居中显示 -->
+        <Image x:Name="imgPreview"
+               Grid.Row="1"
+               Aspect="AspectFit"
+               HorizontalOptions="Fill"
+               VerticalOptions="Fill"
+               Margin="8"/>
+
+        <!-- 底部提示 -->
+        <Label Grid.Row="2"
+               Text="点击左上角返回聊天"
+               FontSize="12"
+               TextColor="#777777"
+               HorizontalOptions="Center"
+               Margin="0,6,0,10"/>
+    </Grid>
+</ContentPage>

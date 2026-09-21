@@ -1,0 +1,576 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:local="clr-namespace:青阳AI"
+             x:Class="青阳AI.SettingsPage"
+             Title="设置"
+             BackgroundColor="#181211">
+    <Grid RowDefinitions="Auto,*">
+        <!-- M3 搜索栏：56dp 全圆角 SurfaceContainerHigh -->
+        <Border Grid.Row="0" Margin="16,12,16,4"
+                BackgroundColor="#2F2928"
+                StrokeThickness="0"
+                StrokeShape="RoundRectangle 28"
+                Padding="16,0"
+                HeightRequest="56" VerticalOptions="Start">
+            <Grid ColumnDefinitions="Auto,*,Auto" VerticalOptions="Center">
+                <local:MorphIcon Grid.Column="0" Icon="Search" IconSize="22" IconColor="#D5C2C1" StrokeWidth="2"/>
+                <Entry x:Name="settingsSearch" Grid.Column="1"
+                       Placeholder="搜索设置项" PlaceholderColor="#9E8D8C"
+                       TextColor="#E9E1E0" BackgroundColor="Transparent"
+                       FontSize="16" Margin="12,0,0,0"
+                       TextChanged="OnSettingsSearchTextChanged"/>
+                <local:MorphIcon x:Name="searchClearIcon" Grid.Column="2" Icon="X" IconSize="18"
+                                 IconColor="#9E8D8C" StrokeWidth="2" IsVisible="False">
+                    <local:MorphIcon.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnSearchClearTapped"/>
+                    </local:MorphIcon.GestureRecognizers>
+                </local:MorphIcon>
+            </Grid>
+        </Border>
+
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="16,12" Spacing="16">
+
+            <!-- ══════════ 🎨 主题色 ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <Label Text="🎨 主题色" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="10">
+                        <HorizontalStackLayout x:Name="themeColorRow" Spacing="8"/>
+                        <Label Text="选中的主题色会应用到标题、按钮、开关、输入框等关键位置。默认紫色。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- ══════════ 🧩 模型与配置 ══════════ -->
+            <VerticalStackLayout Spacing="10">
+
+                <Label Text="🧩 模型与配置" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <!-- 配置套 Tab -->
+                <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                    <Border x:Name="tabConfig1"
+                            BackgroundColor="#FBB5B2"
+                            StrokeThickness="0"
+                            StrokeShape="RoundRectangle 10"
+                            Padding="8,8" HorizontalOptions="Fill">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnTab1Clicked"/>
+                        </Border.GestureRecognizers>
+                        <Label x:Name="lblTab1" Text="配置 1" TextColor="White" FontSize="14" FontAttributes="Bold" HorizontalOptions="Center"/>
+                    </Border>
+                    <Border x:Name="tabConfig2" Grid.Column="1"
+                            BackgroundColor="#2F2928" StrokeThickness="0"
+                            StrokeShape="RoundRectangle 10" Padding="8,8" HorizontalOptions="Fill">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnTab2Clicked"/>
+                        </Border.GestureRecognizers>
+                        <Label x:Name="lblTab2" Text="配置 2" TextColor="#D5C2C1" FontSize="14" HorizontalOptions="Center"/>
+                    </Border>
+                    <Border x:Name="tabConfig3" Grid.Column="2"
+                            BackgroundColor="#2F2928" StrokeThickness="0"
+                            StrokeShape="RoundRectangle 10" Padding="8,8" HorizontalOptions="Fill">
+                        <Border.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnTab3Clicked"/>
+                        </Border.GestureRecognizers>
+                        <Label x:Name="lblTab3" Text="配置 3" TextColor="#D5C2C1" FontSize="14" HorizontalOptions="Center"/>
+                    </Border>
+                </Grid>
+
+                <!-- 文本对话模型 -->
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,10">
+                    <VerticalStackLayout Spacing="0">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnToggleChatBubble"/>
+                            </Grid.GestureRecognizers>
+                            <local:MorphIcon x:Name="chatArrow" Icon="ChevronRight" IconColor="#D5C2C1" IconSize="16" StrokeWidth="2.5" VerticalOptions="Center"/>
+                            <Label Grid.Column="1" Text="文本对话模型" TextColor="White" FontSize="16" FontAttributes="Bold" VerticalOptions="Center"/>
+                            <local:StatusBadge x:Name="stChatStatus" Grid.Column="2" VerticalOptions="Center"/>
+                        </Grid>
+
+                        <VerticalStackLayout x:Name="chatBubbleContent" IsVisible="False" Spacing="10" Margin="0,12,0,0">
+                            <Label Text="API Key" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Entry x:Name="entApiKey" Grid.Column="0" Placeholder="sk-..." PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" IsPassword="true" TextChanged="OnApiKeyTextChanged"/>
+                                <Button Grid.Column="1" x:Name="btnPasteApiKey" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteApiKeyClicked"/>
+                                <Button Grid.Column="2" x:Name="btnClearApiKey" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearApiKeyClicked"/>
+                            </Grid>
+                            <Label Text="API URL" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Entry x:Name="entApiUrl" Grid.Column="0" Placeholder="https://.../chat/completions" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" TextChanged="OnApiUrlTextChanged"/>
+                                <Button Grid.Column="1" x:Name="btnPasteApiUrl" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteApiUrlClicked"/>
+                                <Button Grid.Column="2" x:Name="btnClearApiUrl" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearApiUrlClicked"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                <Label Text="模型" FontSize="13" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                                <Button Grid.Column="1" x:Name="btnFetchModels" Text="获取模型列表" BackgroundColor="#3A3333" TextColor="White" Clicked="OnFetchModelsClicked"/>
+                            </Grid>
+                            <Picker x:Name="picModel" Title="选择模型" BackgroundColor="#2F2928" TextColor="White"/>
+                            <Label Text="思考模型（深度思考时用，可选）" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Entry x:Name="entThinkingModel" Placeholder="留空默认 deepseek-reasoner；换厂商填对方思考模型名" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- 文生图模型 -->
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,10">
+                    <VerticalStackLayout Spacing="0">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnToggleImgBubble"/>
+                            </Grid.GestureRecognizers>
+                            <local:MorphIcon x:Name="imgArrow" Icon="ChevronRight" IconColor="#D5C2C1" IconSize="16" StrokeWidth="2.5" VerticalOptions="Center"/>
+                            <Label Grid.Column="1" Text="文生图（画画 / Ta的头像）" TextColor="White" FontSize="16" FontAttributes="Bold" VerticalOptions="Center"/>
+                            <local:StatusBadge x:Name="stImgStatus" Grid.Column="2" VerticalOptions="Center"/>
+                        </Grid>
+                        <VerticalStackLayout x:Name="imgBubbleContent" IsVisible="False" Spacing="10" Margin="0,12,0,0">
+                            <Label Text="API URL" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Entry x:Name="entImgApiUrl" Grid.Column="0" Placeholder="https://.../images/generations" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" TextChanged="OnImgUrlTextChanged"/>
+                                <Button Grid.Column="1" x:Name="btnPasteImgUrl" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteImgUrlClicked"/>
+                                <Button Grid.Column="2" x:Name="btnClearImgUrl" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearImgUrlClicked"/>
+                            </Grid>
+                            <Label Text="API Key" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Entry x:Name="entImgApiKey" Grid.Column="0" Placeholder="sk-..." PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" IsPassword="true" TextChanged="OnImgKeyTextChanged"/>
+                                <Button Grid.Column="1" x:Name="btnPasteImgKey" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteImgKeyClicked"/>
+                                <Button Grid.Column="2" x:Name="btnClearImgKey" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearImgKeyClicked"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                <Label Text="模型" FontSize="13" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                                <Button Grid.Column="1" x:Name="btnFetchImgModels" Text="获取模型列表" BackgroundColor="#3A3333" TextColor="White" Clicked="OnFetchImgModelsClicked"/>
+                            </Grid>
+                            <Picker x:Name="picImgModel" Title="选择模型" BackgroundColor="#2F2928" TextColor="White"/>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- 听觉模型 -->
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,10">
+                    <VerticalStackLayout Spacing="0">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnToggleAudioBubble"/>
+                            </Grid.GestureRecognizers>
+                            <local:MorphIcon x:Name="audioArrow" Icon="ChevronRight" IconColor="#D5C2C1" IconSize="16" StrokeWidth="2.5" VerticalOptions="Center"/>
+                            <Label Grid.Column="1" Text="语音转文字（语音输入回退）" TextColor="White" FontSize="16" FontAttributes="Bold" VerticalOptions="Center"/>
+                            <local:StatusBadge x:Name="stAudioStatus" Grid.Column="2" VerticalOptions="Center"/>
+                        </Grid>
+                        <VerticalStackLayout x:Name="audioBubbleContent" IsVisible="False" Spacing="10" Margin="0,12,0,0">
+                            <Label Text="API URL" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Entry x:Name="entAudioApiUrl" Grid.Column="0" Placeholder="https://.../audio/transcriptions" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" TextChanged="OnAudioUrlTextChanged"/>
+                                <Button Grid.Column="1" x:Name="btnPasteAudioUrl" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteAudioUrlClicked"/>
+                                <Button Grid.Column="2" x:Name="btnClearAudioUrl" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearAudioUrlClicked"/>
+                            </Grid>
+                            <Label Text="API Key" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Entry x:Name="entAudioApiKey" Grid.Column="0" Placeholder="sk-..." PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" IsPassword="true" TextChanged="OnAudioKeyTextChanged"/>
+                                <Button Grid.Column="1" x:Name="btnPasteAudioKey" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteAudioKeyClicked"/>
+                                <Button Grid.Column="2" x:Name="btnClearAudioKey" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearAudioKeyClicked"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                <Label Text="模型" FontSize="13" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                                <Button Grid.Column="1" x:Name="btnFetchAudioModels" Text="获取模型列表" BackgroundColor="#3A3333" TextColor="White" Clicked="OnFetchAudioModelsClicked"/>
+                            </Grid>
+                            <Picker x:Name="picAudioModel" Title="选择模型" BackgroundColor="#2F2928" TextColor="White"/>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- 视觉模型 -->
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,10">
+                    <VerticalStackLayout Spacing="0">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnToggleVisionBubble"/>
+                            </Grid.GestureRecognizers>
+                            <local:MorphIcon x:Name="visionArrow" Icon="ChevronRight" IconColor="#D5C2C1" IconSize="16" StrokeWidth="2.5" VerticalOptions="Center"/>
+                            <Label Grid.Column="1" Text="视觉理解（看图说话）" TextColor="White" FontSize="16" FontAttributes="Bold" VerticalOptions="Center"/>
+                            <local:StatusBadge x:Name="stVisionStatus" Grid.Column="2" VerticalOptions="Center"/>
+                        </Grid>
+                        <VerticalStackLayout x:Name="visionBubbleContent" IsVisible="False" Spacing="10" Margin="0,12,0,0">
+                            <Label Text="API URL" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Entry x:Name="entVisionApiUrl" Grid.Column="0" Placeholder="https://.../chat/completions" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" TextChanged="OnVisionUrlTextChanged"/>
+                                <Button Grid.Column="1" x:Name="btnPasteVisionUrl" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteVisionUrlClicked"/>
+                                <Button Grid.Column="2" x:Name="btnClearVisionUrl" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearVisionUrlClicked"/>
+                            </Grid>
+                            <Label Text="API Key" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Entry x:Name="entVisionApiKey" Grid.Column="0" Placeholder="sk-..." PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" IsPassword="true" TextChanged="OnVisionKeyTextChanged"/>
+                                <Button Grid.Column="1" x:Name="btnPasteVisionKey" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteVisionKeyClicked"/>
+                                <Button Grid.Column="2" x:Name="btnClearVisionKey" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearVisionKeyClicked"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                <Label Text="模型" FontSize="13" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                                <Button Grid.Column="1" x:Name="btnFetchVisionModels" Text="获取模型列表" BackgroundColor="#3A3333" TextColor="White" Clicked="OnFetchVisionModelsClicked"/>
+                            </Grid>
+                            <Picker x:Name="picVisionModel" Title="选择模型" BackgroundColor="#2F2928" TextColor="White"/>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+
+                <!-- 文字转语音 -->
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,10">
+                    <VerticalStackLayout Spacing="0">
+                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                            <Grid.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnToggleTtsBubble"/>
+                            </Grid.GestureRecognizers>
+                            <local:MorphIcon x:Name="ttsArrow" Icon="ChevronRight" IconColor="#D5C2C1" IconSize="16" StrokeWidth="2.5" VerticalOptions="Center"/>
+                            <Label Grid.Column="1" Text="语音回复（Ta开口说话）" TextColor="White" FontSize="16" FontAttributes="Bold" VerticalOptions="Center"/>
+                            <local:StatusBadge x:Name="stTtsStatus" Grid.Column="2" VerticalOptions="Center"/>
+                        </Grid>
+                        <VerticalStackLayout x:Name="ttsBubbleContent" IsVisible="False" Spacing="10" Margin="0,12,0,0">
+                            <Label Text="API URL" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Entry x:Name="entTtsApiUrl" Grid.Column="0" Placeholder="https://.../audio/speech" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" TextChanged="OnTtsUrlTextChanged"/>
+                                <Button Grid.Column="1" x:Name="btnPasteTtsUrl" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteTtsUrlClicked"/>
+                                <Button Grid.Column="2" x:Name="btnClearTtsUrl" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearTtsUrlClicked"/>
+                            </Grid>
+                            <Label Text="API Key" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                                <Entry x:Name="entTtsApiKey" Grid.Column="0" Placeholder="sk-..." PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" IsPassword="true" TextChanged="OnTtsKeyTextChanged"/>
+                                <Button Grid.Column="1" x:Name="btnPasteTtsKey" Text="粘贴" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnPasteTtsKeyClicked"/>
+                                <Button Grid.Column="2" x:Name="btnClearTtsKey" Text="清空" FontSize="12" Padding="12,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnClearTtsKeyClicked"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                <Label Text="模型" FontSize="13" FontAttributes="Bold" TextColor="White" VerticalOptions="Center"/>
+                                <Button Grid.Column="1" x:Name="btnFetchTtsModels" Text="获取模型列表" BackgroundColor="#3A3333" TextColor="White" Clicked="OnFetchTtsModelsClicked"/>
+                            </Grid>
+                            <Picker x:Name="picTtsModel" Title="选择模型" BackgroundColor="#2F2928" TextColor="White"/>
+                            <Label Text="音色（voice）" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Entry x:Name="entTtsVoice" Placeholder="alloy / echo / nova …（按接口支持的音色名填写）" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                            <HorizontalStackLayout Spacing="10">
+                                <Switch x:Name="swTtsAutoPlay"/>
+                                <Label Text="收到回复后自动朗读" TextColor="#D5C2C1" VerticalOptions="Center"/>
+                            </HorizontalStackLayout>
+                        </VerticalStackLayout>
+                    </VerticalStackLayout>
+                </Border>
+
+            </VerticalStackLayout>
+
+            <!-- ══════════ 💬 Ta的人设 ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <Label Text="💬 Ta的人设" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="12">
+
+                        <HorizontalStackLayout x:Name="hstPersonaTitle" Spacing="0">
+                            <Label x:Name="lblPersonaTitle" Text="人设调节" FontSize="15" FontAttributes="Bold" TextColor="White"/>
+                            <Label x:Name="lblPersonaSub" Text="" FontSize="15" TextColor="#D5C2C1" IsVisible="False"/>
+                        </HorizontalStackLayout>
+
+                        <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                            <Border x:Name="bubblePreset" BackgroundColor="#181211" StrokeThickness="1" Stroke="#FBB5B2"
+                                    StrokeShape="RoundRectangle 10" Padding="10,8" HorizontalOptions="Fill">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnPresetTapped"/>
+                                </Border.GestureRecognizers>
+                                <Label x:Name="lblPreset" Text="官方预设" FontSize="13" TextColor="White" HorizontalOptions="Center"/>
+                            </Border>
+                            <Border x:Name="bubbleCustom" Grid.Column="1" BackgroundColor="#181211" StrokeThickness="1" Stroke="#555555"
+                                    StrokeShape="RoundRectangle 10" Padding="10,8" HorizontalOptions="Fill">
+                                <Border.GestureRecognizers>
+                                    <TapGestureRecognizer Tapped="OnCustomTapped"/>
+                                </Border.GestureRecognizers>
+                                <Label x:Name="lblCustom" Text="自定义" FontSize="13" TextColor="#D5C2C1" HorizontalOptions="Center"/>
+                            </Border>
+                        </Grid>
+
+                        <Border x:Name="personaContentBox" BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 10" Padding="10,8">
+                            <VerticalStackLayout>
+                                <VerticalStackLayout x:Name="panelPreset" Spacing="6">
+                                    <Picker x:Name="picPersonality" Title="选择性格" BackgroundColor="#2F2928" TextColor="White"/>
+                                    <Label Text="性格决定Ta的情感底色和主动行为" FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+                                </VerticalStackLayout>
+                                <VerticalStackLayout x:Name="panelCustom" Spacing="6" IsVisible="False">
+                                    <Editor x:Name="edtPersona" Placeholder="例如：你是一个温柔耐心的学习助手…" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White" HeightRequest="140"/>
+                                </VerticalStackLayout>
+                            </VerticalStackLayout>
+                        </Border>
+
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- ══════════ ⚙️ 对话行为 ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <Label Text="⚙️ 对话行为" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="12">
+
+                        <!-- 强制思考 -->
+                        <HorizontalStackLayout Spacing="10">
+                            <Switch x:Name="swForceThink" Toggled="OnForceThinkToggled"/>
+                            <Label Text="强制思考" TextColor="White" FontAttributes="Bold" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+                        <Label x:Name="lblForceThink"
+                               Text="已关闭：使用普通模型（按所选模型）"
+                               TextColor="#D5C2C1"
+                               FontSize="12"
+                               Margin="0,-8,0,0"/>
+                        <Label Text="推理等级已移到聊天页顶部：在「获取模型列表」后，若当前模型返回了推理档位，会出现「思考」按钮（档位以模型返回为准）"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <BoxView HeightRequest="1" Color="#2F2928"/>
+
+                        <!-- 自动上下文压缩 -->
+                        <HorizontalStackLayout Spacing="10">
+                            <Switch x:Name="swAutoCompress" Toggled="OnAutoCompressToggled"/>
+                            <Label Text="自动上下文压缩" TextColor="White" FontAttributes="Bold" VerticalOptions="Center"/>
+                            <Label x:Name="lblAutoCompressDesc" Text="禁用" TextColor="#D5C2C1" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+                        <Slider x:Name="sldAutoCompress" Minimum="80" Maximum="95" ValueChanged="OnAutoCompressChanged" IsEnabled="False"/>
+                        <Label x:Name="lblAutoCompressValue" Text="阈值：80%" FontSize="14" TextColor="White" HorizontalOptions="Center"/>
+                        <Label Text="上下文占用达到阈值时，自动把旧对话总结成摘要（每 5% 一档，开启后生效）"
+                               FontSize="12" TextColor="#9E8D8C" Margin="0,-8,0,0" LineBreakMode="WordWrap"/>
+
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- ══════════ 🔁 Agent 循环执行模式 ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <Label Text="🔁 Agent 循环执行模式" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="12">
+
+                        <HorizontalStackLayout Spacing="10">
+                            <Switch x:Name="swAgentLoop" Toggled="OnAgentLoopToggled"/>
+                            <Label Text="开启 Agent 循环" TextColor="White" FontAttributes="Bold" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+                        <Label x:Name="lblAgentLoopDesc" Text="关闭：一次问答一个来回"
+                               TextColor="#D5C2C1" FontSize="12" Margin="0,-8,0,0"/>
+
+                        <Label Text="开启后 Ta 会自主多步推进任务：思考 → 执行动作 → 拿结果 → 再思考，直到任务完成。执行过程以单行缩略显示（🧠 思考 / 📄 读取 / ✏️ 编辑 +3 -1），完成后自动折叠并重新总结。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <BoxView HeightRequest="1" Color="#2F2928"/>
+
+                        <Label x:Name="lblAgentTimeValue" Text="执行时限：10 分钟" FontSize="14" TextColor="White"/>
+                        <Slider x:Name="sldAgentTime" Minimum="1" Maximum="5"
+                                ValueChanged="OnAgentTimeChanged" IsEnabled="False"/>
+                        <Label Text="每档 10 分钟，共 5 档：10 / 20 / 30 / 40 / 不限制。到点会停下并给出当前进展。"
+                               FontSize="12" TextColor="#9E8D8C" Margin="0,-8,0,0" LineBreakMode="WordWrap"/>
+
+                        <BoxView HeightRequest="1" Color="#2F2928"/>
+
+                        <Label Text="工作区目录" FontSize="14" FontAttributes="Bold" TextColor="White"/>
+                        <Entry x:Name="entWorkspace" Placeholder="留空则自动选择（有全盘权限时用 内部存储/QingYangAI/WorkSpace）"
+                               PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                        <Label x:Name="lblWorkspaceHint" Text="" FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <Border x:Name="btnExportWorkspace" BackgroundColor="#2A3A32"
+                                StrokeThickness="0" StrokeShape="RoundRectangle 10"
+                                Padding="12,9" HorizontalOptions="Start">
+                            <Label Text="📤 导出工作区到 Download" FontSize="13" TextColor="#B9D5C4"/>
+                            <Border.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnExportWorkspaceClicked"/>
+                            </Border.GestureRecognizers>
+                        </Border>
+
+                        <Label Text="文件权限与浏览器权限在聊天页顶部的盾牌图标里设置。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- ══════════ 💗 主动关心 ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <Label Text="💗 主动关心" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="10">
+
+                        <HorizontalStackLayout Spacing="10">
+                            <Switch x:Name="swCare" Toggled="OnCareToggled"/>
+                            <Label x:Name="lblCareDesc" Text="关闭：Ta不会主动找你" TextColor="#D5C2C1" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+
+                        <Grid ColumnDefinitions="Auto,*,Auto,*" ColumnSpacing="6">
+                            <Label Text="免打扰" TextColor="#D5C2C1" VerticalOptions="Center" FontSize="13"/>
+                            <Entry x:Name="entCareQuietStart" Grid.Column="1" Placeholder="23:30" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                            <Label Grid.Column="2" Text="至" TextColor="#D5C2C1" VerticalOptions="Center" FontSize="13"/>
+                            <Entry x:Name="entCareQuietEnd" Grid.Column="3" Placeholder="08:00" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="Auto,120" ColumnSpacing="8">
+                            <Label Text="每天最多几条" TextColor="#D5C2C1" VerticalOptions="Center" FontSize="13"/>
+                            <Entry x:Name="entCareDailyCap" Grid.Column="1" Keyboard="Numeric" Placeholder="3" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+                        </Grid>
+
+                        <Label Text="开启后Ta会早安问候、深夜提醒休息、久未聊天时主动找你（有时会自己先查一眼你的状态）。免打扰时段和每日上限内绝不打扰。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <!-- 生活感知：Ta能看到什么 -->
+                        <BoxView HeightRequest="1" Color="#2F2928"/>
+                        <Label Text="生活感知：Ta能看到什么" FontSize="14" FontAttributes="Bold" TextColor="White"/>
+                        <HorizontalStackLayout Spacing="10">
+                            <Switch x:Name="swCareSense"/>
+                            <Label Text="允许Ta感知我的生活（优先系统API，无需Shizuku）" TextColor="#D5C2C1" VerticalOptions="Center" FontSize="13"/>
+                        </HorizontalStackLayout>
+
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <Label x:Name="lblGrantUsage" Text="使用情况访问权（前台应用/使用时长）" TextColor="#D5C2C1" VerticalOptions="Center" FontSize="13"/>
+                            <Button x:Name="btnGrantUsage" Grid.Column="1" Text="去授权" FontSize="12" Padding="10,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnGrantUsageClicked"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <Label x:Name="lblGrantNotif" Text="通知使用权（Ta能看到新消息提醒）" TextColor="#D5C2C1" VerticalOptions="Center" FontSize="13"/>
+                            <Button x:Name="btnGrantNotif" Grid.Column="1" Text="去授权" FontSize="12" Padding="10,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnGrantNotifClicked"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <Label x:Name="lblGrantA11y" Text="无障碍（鸿蒙读通知的通道）" TextColor="#D5C2C1" VerticalOptions="Center" FontSize="13"/>
+                            <Button x:Name="btnGrantA11y" Grid.Column="1" Text="去开启" FontSize="12" Padding="10,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnGrantA11yClicked"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <Label x:Name="lblGrantCalendar" Text="日历（今天的日程）" TextColor="#D5C2C1" VerticalOptions="Center" FontSize="13"/>
+                            <Button x:Name="btnGrantCalendar" Grid.Column="1" Text="申请权限" FontSize="12" Padding="10,4" BackgroundColor="#3A3333" TextColor="White" Clicked="OnGrantCalendarClicked"/>
+                        </Grid>
+
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- ══════════ 🧠 每条消息 AI 必看 ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <Label Text="🧠 每条消息 AI 必看" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="10">
+                        <HorizontalStackLayout Spacing="10">
+                            <Switch x:Name="swReviewEach" Toggled="OnReviewEachToggled"/>
+                            <Label x:Name="lblReviewDesc" Text="关闭" TextColor="#9E8D8C" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+
+                        <Label Text="你每次发一条消息，Ta 会先用当前模型私下复盘一遍：情绪、意图、潜台词、关系走向四个维度。复盘结果只进她心里，不上屏、不写库，只让下一次对话更贴。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <Label Text="独立于「主动关心」和「生活感知」，互不影响。关闭后完全停止复盘。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <Button x:Name="btnClearReview" Text="清空已生成的复盘缓存"
+                                BackgroundColor="#3A3333" TextColor="#F2B8B5" Clicked="OnClearReviewClicked"/>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- ══════════ 🧠 记忆与形象 ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <Label Text="🧠 记忆与形象" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="12">
+                        <Label x:Name="lblCompanionDays" Text="💗 已陪伴 1 天" FontSize="14" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                        <VerticalStackLayout Spacing="2">
+                            <VerticalStackLayout.GestureRecognizers>
+                                <TapGestureRecognizer Tapped="OnMemoriesTapped"/>
+                            </VerticalStackLayout.GestureRecognizers>
+                            <Label Text="她记住的事 ›" FontSize="15" FontAttributes="Bold" TextColor="White"/>
+                            <Label x:Name="lblMemoryCount" Text="已记住 0 条关于你的事" FontSize="12" TextColor="#9E8D8C"/>
+                        </VerticalStackLayout>
+
+                        <BoxView HeightRequest="1" Color="#2F2928"/>
+
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <Button x:Name="btnAvatar" Text="让她给自己画一张头像" BackgroundColor="#3A3333" TextColor="White" Clicked="OnDrawAvatarClicked"/>
+                            <Button x:Name="btnClearMemory" Grid.Column="1" Text="清空记忆" BackgroundColor="#B0413E" TextColor="White" Clicked="OnClearMemoryClicked"/>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- ══════════ 🗄 备份与恢复 ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <Label Text="🗄 备份与恢复" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="10">
+                        <Label Text="导出包含全部聊天、记忆、日记、头像的备份文件（通过分享面板保存）。导入为覆盖式恢复，会替换现有数据。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <Button x:Name="btnExportData" Text="导出备份" BackgroundColor="#3A3333" TextColor="White" Clicked="OnExportDataClicked"/>
+                            <Button x:Name="btnImportData" Grid.Column="1" Text="导入备份" BackgroundColor="#3A3333" TextColor="White" Clicked="OnImportDataClicked"/>
+                        </Grid>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- ══════════ 🦾 Super Admin（高风险） ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <HorizontalStackLayout Spacing="8">
+                    <Label Text="🦾 Super Admin" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                    <Label Text="⚠️ 高风险" FontSize="13" FontAttributes="Bold" TextColor="#F2B8B5" VerticalOptions="Center"/>
+                </HorizontalStackLayout>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="10">
+                        <HorizontalStackLayout Spacing="10">
+                            <Switch x:Name="swSuperAdmin" Toggled="OnSuperAdminToggled"/>
+                            <Label x:Name="lblSuperAdminState" Text="关闭" TextColor="#9E8D8C" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+
+                        <BoxView HeightRequest="1" Color="#524342"/>
+
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="存储访问权限（全盘读写文件）" FontSize="14" FontAttributes="Bold" TextColor="#E9E1E0"/>
+                                <Label x:Name="lblStorageState" Text="未授予" FontSize="12" TextColor="#9E8D8C"/>
+                            </VerticalStackLayout>
+                            <Button x:Name="btnStorage" Grid.Column="1" Text="去开启" FontSize="12" Padding="12,4"
+                                    BackgroundColor="#3A3333" TextColor="#F2B8B5" Clicked="OnStorageClicked"/>
+                        </Grid>
+
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                            <VerticalStackLayout Spacing="2">
+                                <Label Text="设备管理器" FontSize="14" FontAttributes="Bold" TextColor="#E9E1E0"/>
+                                <Label x:Name="lblAdminState" Text="未激活" FontSize="12" TextColor="#9E8D8C"/>
+                            </VerticalStackLayout>
+                            <Button x:Name="btnAdmin" Grid.Column="1" Text="去激活" FontSize="12" Padding="12,4"
+                                    BackgroundColor="#3A3333" TextColor="#F2B8B5" Clicked="OnAdminClicked"/>
+                        </Grid>
+
+                        <Label Text="开启后 AI 可读写整个手机的文件、执行系统级管理（锁屏/清数据等）。这些权限可能让手机无法轻易卸载本应用，请务必只在完全信任时开启。"
+                               FontSize="12" TextColor="#F2B8B5" LineBreakMode="WordWrap"/>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- ══════════ 🛠 Shizuku ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <Label Text="🛠 Shizuku（深度操作）" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="10">
+                        <HorizontalStackLayout Spacing="8">
+                            <Label Text="连接状态:" TextColor="#D5C2C1" VerticalOptions="Center"/>
+                            <Label x:Name="lblShizukuStatus" Text="offline" TextColor="#F2B8B5" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+                        <Button Text="请求 Shizuku 授权" BackgroundColor="#3A3333" TextColor="White" Clicked="OnRequestShizukuClicked"/>
+                        <Label Text="1、在手机上安装并启动 Shizuku（需 Android 7.0 及以上）。" TextColor="#D5C2C1" FontSize="13" LineBreakMode="WordWrap"/>
+                        <Label Text="2、通过「无线调试 (配对码)」或 Root 方式启动 Shizuku 服务，使状态变为 online。" TextColor="#D5C2C1" FontSize="13" LineBreakMode="WordWrap"/>
+                        <Label Text="3、回到本页，若状态为 online，点击上方「请求 Shizuku 授权」按钮。" TextColor="#D5C2C1" FontSize="13" LineBreakMode="WordWrap"/>
+                        <Label Text="4、在系统弹窗中允许「青阳AI」使用 Shizuku。授权后 AI 即可帮你执行部分系统命令。" TextColor="#D5C2C1" FontSize="13" LineBreakMode="WordWrap"/>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
+            <!-- 保存 -->
+            <Button x:Name="btnSave" Text="保存设置" BackgroundColor="#FBB5B2" Clicked="OnSaveClicked" CornerRadius="12"/>
+            <Button x:Name="btnClearChat" Text="清空聊天数据" BackgroundColor="#B0413E" TextColor="White" Clicked="OnClearChatClicked" CornerRadius="12"/>
+
+        </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

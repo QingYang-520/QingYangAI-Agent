@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+	<application android:allowBackup="true" android:icon="@mipmap/appicon" android:roundIcon="@mipmap/appicon_round" android:supportsRtl="true">
+		<!-- Shizuku：注册 Provider 以通过 ContentProvider 建立 binder，授权流程必需 -->
+		<provider
+			android:name="rikka.shizuku.ShizukuProvider"
+			android:authorities="${applicationId}.shizuku"
+			android:multiprocess="false"
+			android:enabled="true"
+			android:exported="true"
+			android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+		<!-- 无障碍通知感知（鸿蒙可用，无 USB 依赖） -->
+		<service
+			android:name=".QyAccessibilityService"
+			android:exported="true"
+			android:label="青阳AI 通知感知（无障碍）"
+			android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+			<intent-filter>
+				<action android:name="android.accessibilityservice.AccessibilityService" />
+			</intent-filter>
+			<meta-data android:name="android.accessibilityservice" android:resource="@xml/qy_accessibility" />
+		</service>
+		<!-- Super Admin：设备管理器接收器（高风险，独立开关控制） -->
+		<receiver
+			android:name=".QyAdminReceiver"
+			android:description="@string/qy_admin_desc"
+			android:label="青阳AI 超级管理员"
+			android:permission="android.permission.BIND_DEVICE_ADMIN"
+			android:exported="true">
+			<meta-data android:name="android.app.device_admin" android:resource="@xml/qy_device_admin" />
+			<intent-filter>
+				<action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+			</intent-filter>
+		</receiver>
+	</application>
+	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+	<uses-permission android:name="android.permission.INTERNET" />
+	<!-- 语音识别（系统 SpeechRecognizer 需要录音权限） -->
+	<uses-permission android:name="android.permission.RECORD_AUDIO" />
+	<!-- 保存图片到相册（Android 10+ 用 MediaStore 无需此权限，低版本需要） -->
+	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+	<!-- 读取相册图片 -->
+	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+	<!-- Shizuku 授权权限 -->
+	<uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+	<!-- 主动关心消息通知（Android 13+ 需运行时申请） -->
+	<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+	<!-- 开机完成后重排主动关心定时任务 -->
+	<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+	<!-- 使用情况访问权（前台应用/使用时长感知，免 Shizuku；需用户在系统设置里手动开启） -->
+	<uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+	<!-- Super Admin：全盘存储访问（高风险，独立开关控制） -->
+	<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+	<!-- Super Admin：设备管理器（高风险，独立开关控制） -->
+	<uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
+	<queries>
+		<package android:name="moe.shizuku.manager" />
+		<package android:name="moe.shizuku.privileged.api" />
+	</queries>
+</manifest>

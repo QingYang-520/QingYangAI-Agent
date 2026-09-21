@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="青阳AI.AgreementPage"
+             Title="用户协议与隐私政策">
+    <VerticalStackLayout Padding="20" Spacing="15">
+        <Label Text="欢迎使用青阳AI" FontSize="22" HorizontalOptions="Center"/>
+        <ScrollView HeightRequest="280">
+            <Label Text="用户协议内容：
+1、本软件仅供个人学习使用
+2、请遵守国家相关法律法规
+3、我们会保护你的个人隐私" LineBreakMode="WordWrap"/>
+        </ScrollView>
+
+        <HorizontalStackLayout Spacing="8">
+            <CheckBox x:Name="chkAgree"/>
+            <Label Text="我已经阅读并同意以上协议" VerticalOptions="Center"/>
+        </HorizontalStackLayout>
+
+        <Button x:Name="btnConfirm" Text="同意并继续" Clicked="OnAgreeClicked"/>
+    </VerticalStackLayout>
+</ContentPage>

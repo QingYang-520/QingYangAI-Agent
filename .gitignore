@@ -32,3 +32,12 @@ csproj/
 *.ttf
 *.pptx
 *.aar
+
+# ── 只传源码：文档 / 脚本 / 临时文件都不进仓库 ──
+*.md
+!README.md
+*.ps1
+_*.py
+_*.txt
+*.log
+test_*

@@ -137,10 +137,10 @@ public static class FileGuard
                                + "只能访问公共存储（内部存储）里的文件。");
         }
 
-        // 工作区以外的路径，必须真有系统「所有文件访问」权限
+        // 工作区以外的路径，必须真有全盘读写能力（系统版本不同，叫法/判定也不同）
         if (!StorageAccess.IsAllFilesGranted())
-            return (false, "系统还没有授予「所有文件访问」权限，无法读写公共存储。"
-                           + "请让用户在聊天页盾牌面板里点「去开启」跳转系统设置授予；"
+            return (false, "系统还没有授予" + StorageAccess.PermissionLabel + "，无法读写公共存储。"
+                           + "请让用户在聊天页盾牌面板里点「" + StorageAccess.GrantButtonText + "」；"
                            + "在那之前，只能读写工作区内的文件。");
 
         return (true, "");

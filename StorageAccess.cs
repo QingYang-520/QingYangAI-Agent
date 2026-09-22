@@ -1,4 +1,7 @@
 using System.Text;
+// 全限定别名：Android 目标的隐式 using 里也有 Permission/PermissionStatus 相关类型，避免歧义
+using MauiPermissions = Microsoft.Maui.ApplicationModel.Permissions;
+using MauiPermissionStatus = Microsoft.Maui.ApplicationModel.PermissionStatus;
 
 namespace 青阳AI;
 
@@ -142,11 +145,100 @@ public static class StorageAccess
 
     // ─────────── 系统权限 ───────────
 
-    /// <summary>是否已获得 Android「所有文件访问」权限（MANAGE_EXTERNAL_STORAGE）。</summary>
-    public static bool IsAllFilesGranted() => SuperAdmin.IsStorageGranted();
+    /// <summary>
+    /// 是否已获得全盘读写能力。
+    ///
+    /// ① 先问系统：Android 11+ 看「所有文件访问」（MANAGE_EXTERNAL_STORAGE）；
+    ///    Android 10 及以下没有那个开关，看普通存储权限（配 requestLegacyExternalStorage）。
+    /// ② 系统说"没有"时，再做一次**真实写入探测** ——
+    ///    因为部分 ROM（实测：鸿蒙）的系统开关和实际能力对不上：
+    ///    用户明明已经在系统设置里给了权限，开关却还是 false，
+    ///    结果「完全访问」被永久锁死，点了没反应。
+    ///    与其信开关，不如直接试着写一下。
+    /// </summary>
+    public static bool IsAllFilesGranted()
+        => SuperAdmin.IsStorageGranted() || ProbePublicWritable();
 
-    /// <summary>跳转系统设置，引导用户授予「所有文件访问」。</summary>
-    public static void RequestPermission() => SuperAdmin.OpenStorageSettings();
+    private static bool? _probeOk;
+    private static DateTime _probeAt;
+
+    /// <summary>
+    /// 去公共存储根目录写一个探针文件再删掉 —— 这是"到底能不能写"的最终事实，
+    /// 不依赖任何 ROM 的权限开关实现。结果缓存 10 秒，避免每次刷面板都做 I/O。
+    /// </summary>
+    private static bool ProbePublicWritable()
+    {
+        if (_probeOk.HasValue && (DateTime.UtcNow - _probeAt).TotalSeconds < 10)
+            return _probeOk.Value;
+
+        bool ok = false;
+        try
+        {
+            var root = PublicRoot;
+            if (!string.IsNullOrEmpty(root) && Directory.Exists(root))
+            {
+                var probe = root.TrimEnd('/') + "/.qy_write_probe";
+                File.WriteAllText(probe, "1");
+                File.Delete(probe);
+                ok = true;
+            }
+        }
+        catch { ok = false; }
+
+        _probeOk = ok;
+        _probeAt = DateTime.UtcNow;
+        return ok;
+    }
+
+    /// <summary>权限状态可能变了（刚授权回来）时清掉探测缓存。</summary>
+    public static void InvalidateProbe() { _probeOk = null; }
+
+    /// <summary>这个权限在界面上叫什么（不同系统版本叫法不一样）。</summary>
+    public static string PermissionLabel
+        => SuperAdmin.HasAllFilesAccessApi ? "系统「所有文件访问」" : "系统「存储」权限";
+
+    /// <summary>「去开启」按钮上的文案。</summary>
+    public static string GrantButtonText
+        => SuperAdmin.HasAllFilesAccessApi ? "去开启「所有文件访问」" : "去授予存储权限";
+
+    /// <summary>
+    /// 引导用户拿到全盘读写能力。
+    /// Android 11+ ：跳系统「所有文件访问」页面；
+    /// Android 10- ：系统里根本没有那个页面，直接申请运行时存储权限；
+    ///               被永久拒绝时再跳到本应用的系统详情页让用户手动开。
+    /// 返回调用后是否已经拿到权限。
+    /// </summary>
+    public static async Task<bool> RequestPermissionAsync()
+    {
+        if (IsAllFilesGranted()) return true;
+
+        if (SuperAdmin.HasAllFilesAccessApi)
+        {
+            SuperAdmin.OpenStorageSettings();
+            return false;
+        }
+
+        try
+        {
+            var w = await MauiPermissions.CheckStatusAsync<MauiPermissions.StorageWrite>();
+            if (w != MauiPermissionStatus.Granted)
+                w = await MauiPermissions.RequestAsync<MauiPermissions.StorageWrite>();
+
+            var r = await MauiPermissions.CheckStatusAsync<MauiPermissions.StorageRead>();
+            if (r != MauiPermissionStatus.Granted)
+                r = await MauiPermissions.RequestAsync<MauiPermissions.StorageRead>();
+
+            if (w == MauiPermissionStatus.Granted || r == MauiPermissionStatus.Granted) return true;
+
+            // 用户选了「不再询问」之类 → 只能去应用详情页手动开
+            SuperAdmin.OpenAppSettings();
+        }
+        catch { }
+        return false;
+    }
+
+    /// <summary>不等待结果的版本（兼容旧的 void 调用点）。</summary>
+    public static void RequestPermission() { _ = RequestPermissionAsync(); }
 
     // ─────────── 路径识别与显示 ───────────
 
@@ -387,7 +479,7 @@ public static class StorageAccess
         {
             sb.AppendLine("你只能读写工作区（APP 私有目录），无法访问 "
                           + (PublicRoot.Length > 0 ? PublicRoot : "公共存储") + " 等公共路径。");
-            sb.AppendLine("如果要写到公共存储，先告诉用户在聊天页盾牌图标里开启「所有文件访问」。");
+            sb.AppendLine("如果要写到公共存储，先告诉用户在聊天页盾牌图标里开启" + PermissionLabel + "。");
         }
 
         sb.AppendLine("注意：即使开启全盘权限，也只能访问公共存储，读不到其他 APP 的私有 /data 目录（Android 沙盒限制）。");

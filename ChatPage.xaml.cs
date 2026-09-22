@@ -206,6 +206,7 @@ InitializeComponent();
     {
         try
         {
+            StorageAccess.InvalidateProbe();   // 刚回页面，重新探测一次真实写入能力
             bool granted = StorageAccess.IsAllFilesGranted();
             bool wasGranted = AppSettings.LastStorageGranted;
 
@@ -1538,10 +1539,12 @@ InitializeComponent();
         permDiskGroup.Opacity = diskDim ? 0.4 : 1;
         rowFullAccess.Opacity = granted ? 1 : 0.4;
 
-        // 没系统权限 → 顶部亮出引导条
+        // 没系统权限 → 顶部亮出引导条（按系统版本给不同说法：
+        // Android 11+ 叫「所有文件访问」，Android 10- 只有普通「存储」权限）
         storageWarnBox.IsVisible = !granted;
+        lblGrantStorage.Text = StorageAccess.GrantButtonText;
         if (!granted)
-            lblStorageWarn.Text = "尚未授予系统「所有文件访问」，全盘读写与完全访问无法生效。"
+            lblStorageWarn.Text = "尚未授予" + StorageAccess.PermissionLabel + "，全盘读写与完全访问无法生效。"
                                 + "开启后 Ta 才能读写内部存储、生成的文件你也能在文件管理器里看到。";
 
         // 摘要：说清当前真实状态 + 边界
@@ -1565,6 +1568,10 @@ InitializeComponent();
                 : "工作区在应用私有目录，外部不可见。");
         }
         sb.Append("\n注：即使全盘权限也只覆盖公共存储，读不到其他 App 的私有目录。");
+        // 排查用：把系统版本和权限判定结果直接摆出来，出问题一眼能看到
+        sb.Append("\n系统：").Append(SuperAdmin.AndroidVersionText)
+          .Append(" · ").Append(StorageAccess.PermissionLabel)
+          .Append(granted ? "已授予" : "未授予");
         lblPermSummary.Text = sb.ToString();
     }
 
@@ -1621,8 +1628,17 @@ InitializeComponent();
         RefreshPermPanel();
     }
 
-    /// <summary>点「去开启」：跳系统设置申请「所有文件访问」。</summary>
-    private void OnGrantStorageTapped(object? sender, EventArgs e) => StorageAccess.RequestPermission();
+    /// <summary>
+    /// 点「去开启」：拿存储权限。
+    /// Android 11+ 跳系统「所有文件访问」页；Android 10 及以下直接弹运行时权限申请。
+    /// 拿到后立刻刷新面板，不用等回到页面。
+    /// </summary>
+    private async void OnGrantStorageTapped(object? sender, EventArgs e)
+    {
+        await StorageAccess.RequestPermissionAsync();
+        StorageAccess.InvalidateProbe();   // 重新探测，别拿旧缓存判
+        RefreshPermPanel();
+    }
 
     /// <summary>
     /// 全盘权限缺失时的统一引导：说清为什么、给出跳转按钮。
@@ -1630,14 +1646,26 @@ InitializeComponent();
     /// </summary>
     private async Task PromptGrantStorageAsync()
     {
-        bool go = await DisplayAlert("需要系统权限",
-            "「读取/修改全盘文件」和「完全访问」需要 Android 系统的「所有文件访问」权限，"
+        string how = SuperAdmin.HasAllFilesAccessApi
+            ? "点「去开启」会跳到系统设置，找到「青阳AI」并打开「允许访问所有文件」，回来后权限就会自动生效。\n\n"
+              + "（部分定制系统——比如鸿蒙/EMUI——把入口放在「设置 → 应用 → 应用管理 → 青阳AI → 权限」里，"
+              + "找不到「所有文件访问」时去那儿翻一下。）"
+            : "点「去开启」会弹出系统的存储权限申请，允许即可。\n\n"
+              + "（你这台是 " + SuperAdmin.AndroidVersionText + "，这个版本的系统没有「所有文件访问」那个开关，"
+              + "用普通存储权限 + 传统存储模式实现同样的全盘读写效果。）";
+
+        bool go = await DisplayAlert("需要存储权限",
+            "「读取/修改全盘文件」和「完全访问」需要" + StorageAccess.PermissionLabel + "，"
             + "当前尚未授予，所以这两个选项还不能生效。\n\n"
-            + "点「去开启」会跳到系统设置，找到「青阳AI」并打开「允许访问所有文件」，"
-            + "回来后权限就会自动生效。\n\n"
+            + how + "\n\n"
             + "（开启后 Ta 生成的文件会放在 内部存储/QingYangAI/WorkSpace，你在文件管理器里能直接看到）",
             "去开启", "暂不");
-        if (go) StorageAccess.RequestPermission();
+        if (go)
+        {
+            await StorageAccess.RequestPermissionAsync();
+            StorageAccess.InvalidateProbe();
+            RefreshPermPanel();
+        }
     }
 
     /// <summary>把工作区文件导出到公共 Download 目录。</summary>

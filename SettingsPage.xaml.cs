@@ -265,11 +265,11 @@ public partial class SettingsPage : ContentPage
         UpdateSuperAdminState();
     }
 
-    private void OnStorageClicked(object? sender, EventArgs e)
+    private async void OnStorageClicked(object? sender, EventArgs e)
     {
-#if ANDROID
-        SuperAdmin.OpenStorageSettings();
-#endif
+        await StorageAccess.RequestPermissionAsync();
+        StorageAccess.InvalidateProbe();
+        UpdateSuperAdminState();
     }
 
     private void OnAdminClicked(object? sender, EventArgs e)
@@ -665,11 +665,18 @@ public partial class SettingsPage : ContentPage
 
         if (!StorageAccess.IsAllFilesGranted())
         {
-            bool go = await DisplayAlert("需要系统权限",
-                "导出到 Download 需要系统「所有文件访问」权限。\n\n"
-                + "点「去开启」跳转系统设置，找到「青阳AI」并打开「允许访问所有文件」。",
+            bool go = await DisplayAlert("需要存储权限",
+                "导出到 Download 需要" + StorageAccess.PermissionLabel + "。\n\n"
+                + (SuperAdmin.HasAllFilesAccessApi
+                    ? "点「去开启」跳转系统设置，找到「青阳AI」并打开「允许访问所有文件」。"
+                    : "点「去开启」会弹出系统的存储权限申请，允许即可。"),
                 "去开启", "暂不");
-            if (go) StorageAccess.RequestPermission();
+            if (go)
+            {
+                await StorageAccess.RequestPermissionAsync();
+                StorageAccess.InvalidateProbe();
+                UpdateWorkspaceHint();
+            }
             return;
         }
 

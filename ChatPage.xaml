@@ -398,7 +398,7 @@
                         <Border x:Name="btnGrantStorage" BackgroundColor="#B3453F"
                                 StrokeThickness="0" StrokeShape="RoundRectangle 6"
                                 Padding="10,6" HorizontalOptions="Start">
-                            <Label Text="去开启「所有文件访问」" FontSize="11.5" TextColor="White"/>
+                            <Label x:Name="lblGrantStorage" Text="去开启「所有文件访问」" FontSize="11.5" TextColor="White"/>
                             <Border.GestureRecognizers>
                                 <TapGestureRecognizer Tapped="OnGrantStorageTapped"/>
                             </Border.GestureRecognizers>

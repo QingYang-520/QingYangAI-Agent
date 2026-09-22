@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           xmlns:tools="http://schemas.android.com/tools">
-	<application android:allowBackup="true" android:icon="@mipmap/appicon" android:roundIcon="@mipmap/appicon_round" android:supportsRtl="true">
+	<application android:allowBackup="true" android:icon="@mipmap/appicon" android:roundIcon="@mipmap/appicon_round" android:supportsRtl="true"
+	             android:requestLegacyExternalStorage="true">
 		<!-- Shizuku：注册 Provider 以通过 ContentProvider 建立 binder，授权流程必需 -->
 		<provider
 			android:name="rikka.shizuku.ShizukuProvider"
@@ -38,9 +39,10 @@
 	<uses-permission android:name="android.permission.INTERNET" />
 	<!-- 语音识别（系统 SpeechRecognizer 需要录音权限） -->
 	<uses-permission android:name="android.permission.RECORD_AUDIO" />
-	<!-- 保存图片到相册（Android 10+ 用 MediaStore 无需此权限，低版本需要） -->
-	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
-	<!-- 读取相册图片 -->
+	<!-- 保存图片到相册 / Android 10 及以下的全盘读写（配 requestLegacyExternalStorage）
+	     注意 maxSdkVersion 必须放到 29：原来写 28 会让 Android 10 拿不到写权限 -->
+	<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+	<!-- 读取相册图片 / Android 10 及以下的存储判定 -->
 	<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 	<!-- Shizuku 授权权限 -->
 	<uses-permission android:name="moe.shizuku.manager.permission.API_V23" />

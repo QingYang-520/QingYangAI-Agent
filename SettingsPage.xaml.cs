@@ -598,8 +598,135 @@ public partial class SettingsPage : ContentPage
         entWorkspace.Text = AppSettings.WorkspacePath;
         UpdateWorkspaceHint();
 
+        // AI 浏览器
+        InitAiBrowserUi();
+
         // 主题色
         BuildThemeColorPicker();
+    }
+
+    // ══════════════ 🌐 AI 浏览器 ══════════════
+
+    private const string UaCustomTag = "自定义…";
+
+    private void InitAiBrowserUi()
+    {
+        swAiBrowser.IsToggled = AppSettings.AiBrowserEnabled;
+        UpdateAiBrowserDesc(swAiBrowser.IsToggled);
+
+        swSaveCookies.IsToggled = AppSettings.BrowserSaveCookies;
+        UpdateSaveCookiesDesc(swSaveCookies.IsToggled);
+
+        swLoadImages.IsToggled = AppSettings.BrowserLoadImages;
+        UpdateLoadImagesDesc(swLoadImages.IsToggled);
+
+        picUserAgent.ItemsSource = new List<string> { "手机（默认）", "桌面 Chrome", UaCustomTag };
+        picUserAgent.SelectedIndex = AppSettings.BrowserUserAgent switch
+        {
+            "desktop" => 1,
+            "" or "mobile" => 0,
+            _ => 2
+        };
+        entUserAgent.Text = AppSettings.BrowserUserAgent is "" or "mobile" or "desktop"
+            ? "" : AppSettings.BrowserUserAgent;
+
+        picDownloadDir.ItemsSource = new List<string> { "工作区（内部存储/QingYangAI/WorkSpace）", "公共 Download 目录" };
+        picDownloadDir.SelectedIndex = AppSettings.BrowserDownloadDir == "download" ? 1 : 0;
+
+        entMaxDownloadMb.Text = AppSettings.BrowserMaxDownloadMb.ToString();
+
+        UpdateBrowserHistoryLabel();
+    }
+
+    private void UpdateBrowserHistoryLabel() =>
+        lblBrowserHistory.Text = "浏览历史：" + AppSettings.BrowserHistory().Count + " 条";
+
+    private void UpdateAiBrowserDesc(bool on) => lblAiBrowserDesc.Text = on ? "开启" : "关闭";
+    private void UpdateSaveCookiesDesc(bool on) => lblSaveCookiesDesc.Text = on ? "保存（保留登录态）" : "不保存（每次新访客）";
+    private void UpdateLoadImagesDesc(bool on) => lblLoadImagesDesc.Text = on ? "加载" : "不加载（省流量）";
+
+    private void OnAiBrowserToggled(object? sender, ToggledEventArgs e)
+    {
+        AppSettings.AiBrowserEnabled = e.Value;
+        UpdateAiBrowserDesc(e.Value);
+    }
+
+    private void OnSaveCookiesToggled(object? sender, ToggledEventArgs e)
+    {
+        AppSettings.BrowserSaveCookies = e.Value;
+        UpdateSaveCookiesDesc(e.Value);
+        if (!e.Value)
+        {
+            // 关掉就顺手清一次，别留着旧登录态
+            WebAgent.ClearCookies();
+            BrowserTool.ClearCookies();
+        }
+    }
+
+    private void OnLoadImagesToggled(object? sender, ToggledEventArgs e)
+    {
+        AppSettings.BrowserLoadImages = e.Value;
+        UpdateLoadImagesDesc(e.Value);
+        WebAgent.ApplySettings();
+    }
+
+    private void OnUserAgentChanged(object? sender, EventArgs e)
+    {
+        var v = picUserAgent.SelectedIndex switch
+        {
+            1 => "desktop",
+            2 => entUserAgent.Text?.Trim() ?? "",
+            _ => ""
+        };
+        AppSettings.BrowserUserAgent = v;
+        WebAgent.ApplySettings();
+        BrowserTool.ApplySettings();
+    }
+
+    private void OnUserAgentTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (picUserAgent.SelectedIndex != 2) return;
+        AppSettings.BrowserUserAgent = e.NewTextValue?.Trim() ?? "";
+        WebAgent.ApplySettings();
+        BrowserTool.ApplySettings();
+    }
+
+    private void OnDownloadDirChanged(object? sender, EventArgs e)
+    {
+        AppSettings.BrowserDownloadDir = picDownloadDir.SelectedIndex == 1 ? "download" : "";
+    }
+
+    private void OnMaxDownloadMbChanged(object? sender, FocusEventArgs e)
+    {
+        if (int.TryParse(entMaxDownloadMb.Text?.Trim(), out var mb))
+            AppSettings.BrowserMaxDownloadMb = mb;
+        entMaxDownloadMb.Text = AppSettings.BrowserMaxDownloadMb.ToString();
+    }
+
+    private async void OnViewHistoryClicked(object? sender, EventArgs e)
+    {
+        var list = AppSettings.BrowserHistory();
+        var text = list.Count == 0 ? "还没有浏览记录。" : string.Join("\n", list);
+        await DisplayAlert("Ta 的浏览历史（最近 50 条）", text, "好");
+    }
+
+    private async void OnClearCookiesClicked(object? sender, EventArgs e)
+    {
+        bool ok = await DisplayAlert("清除 Cookie",
+            "会把 Ta 在浏览器里的所有登录态清掉（下次访问网站需要重新登录）。\n\n确定吗？", "清除", "取消");
+        if (!ok) return;
+        WebAgent.ClearCookies();
+        BrowserTool.ClearCookies();
+        await DisplayAlert("已清除", "Cookie 清干净了。", "好");
+    }
+
+    private async void OnClearHistoryClicked(object? sender, EventArgs e)
+    {
+        bool ok = await DisplayAlert("清空浏览历史", "只清记录，不动 Cookie。确定吗？", "清空", "取消");
+        if (!ok) return;
+        AppSettings.ClearBrowserHistory();
+        UpdateBrowserHistoryLabel();
+        await DisplayAlert("已清空", "浏览历史清空了。", "好");
     }
 
     /// <summary>刷新「Agent 循环」说明文字。</summary>

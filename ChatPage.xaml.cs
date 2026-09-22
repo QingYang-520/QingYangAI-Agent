@@ -172,6 +172,8 @@ InitializeComponent();
     protected override async void OnAppearing()
     {
         base.OnAppearing();
+        // 把页面里的隐藏 WebView 交给 AI 当浏览器用（顺带把 UA / 图片开关打进去）
+        try { WebAgent.Attach(agentWeb); } catch { }
         try
         {
             // 无论 InitAsync 是否完成，列表都保持可见（首次由 InitAsync 负责加载历史）
@@ -769,6 +771,11 @@ InitializeComponent();
             // 检测到下载指令：真的把文件下到工作区
             await RunDownloadPipelineAsync(text, aiBubble);
         }
+        else if (sseResult.CancelledForWeb)
+        {
+            // 检测到真浏览器指令：交给隐藏 WebView 执行（跑 JS / 点击 / 填表）
+            await RunWebPipelineAsync(text, aiBubble);
+        }
         // 管线都跑完了，指令已经没用了：从气泡里整段抹掉，别让用户看到 {download:"…"} 这种东西
         aiBubble.Content = InstructionParser.RemoveInstructions(aiBubble.Content);
         _ = ChatStore.Instance.SaveMessageAsync(aiBubble);
@@ -783,6 +790,57 @@ InitializeComponent();
         var end = text.IndexOf("\"}", start + 11);
         if (end < start) return "";
         return text.Substring(start + 11, end - start - 11).Trim();
+    }
+
+    /// <summary>提取真浏览器指令（{web:"动作 参数"}）。</summary>
+    private string ExtractWebCommand(string text)
+    {
+        var start = text.IndexOf("{web:\"");
+        if (start < 0) return "";
+        var end = text.IndexOf("\"}", start + 6);
+        if (end < start) return "";
+        return text.Substring(start + 6, end - start - 6).Trim();
+    }
+
+    /// <summary>
+    /// 真浏览器管线：{web:"动作 参数"} → 藏在聊天页里的隐藏 WebView 执行 → 结果回传。
+    /// 这是 HttpClient 做不到的那部分：JS 渲染的页面、点按钮、翻页、填表单、登录。
+    /// </summary>
+    private async Task RunWebPipelineAsync(string userText, ChatMsg aiBubble)
+    {
+        var cmd = ExtractWebCommand(aiBubble.Content);
+        if (string.IsNullOrEmpty(cmd))
+        {
+            aiBubble.Content = "（没拿到有效的浏览器指令。）";
+            return;
+        }
+
+        var result = await WebAgent.RunAsync(cmd);
+
+        var hint = "【浏览器执行结果】\n" + result + "\n\n" +
+                   "请用自然的话把结果告诉用户（像你自己看到的一样），不要说'根据网页'。" +
+                   "如果结果是空页面或提示还在加载，可以再试一次 {web:\"text\"}，或换个思路。" +
+                   "不要再输出 {web:...}。";
+
+        var continueMessages = new List<object>
+        {
+            new { role = "system", content = AppSettings.BuildSystemPrompt() },
+            new { role = "user", content = userText },
+            new { role = "assistant", content = InstructionParser.RemoveInstructions(aiBubble.Content) },
+            new { role = "user", content = hint }
+        };
+        try
+        {
+            var body = BuildChatBody(AppSettings.ResolveChatModel(AppSettings.ForceThinking), continueMessages, stream: true);
+            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content);
+            resp.EnsureSuccessStatusCode();
+            await ConsumeSseAsync(resp, aiBubble);
+        }
+        catch
+        {
+            aiBubble.Content = result;   // 模型这轮挂了，至少把浏览器结果摆出来
+        }
     }
 
     /// <summary>
@@ -888,10 +946,10 @@ InitializeComponent();
                         // 正文开始 = 思考过程结束：冻结用时（此后不再累加）
                         aiBubble.IsThinkingActive = false;
                         result.ThinkingFrozen = true;
-                        // 检测指令：{cmd:"..."} / {api:"..."} / {img:"..."} / {browse:"..."} / {download:"..."}
+                        // 检测指令：{cmd:} / {api:} / {img:} / {browse:} / {download:} / {web:}
                         if (delta.content.Contains("{cmd:") || delta.content.Contains("{api:") || 
                             delta.content.Contains("{img:") || delta.content.Contains("{browse:") ||
-                            delta.content.Contains("{download:"))
+                            delta.content.Contains("{download:") || delta.content.Contains("{web:"))
                         {
                             // 提前断流，交给后续管线处理
                             if (delta.content.Contains("{cmd:")) result.CancelledForCommand = true;
@@ -899,6 +957,7 @@ InitializeComponent();
                             if (delta.content.Contains("{img:")) result.CancelledForImage = true;
                             if (delta.content.Contains("{browse:")) result.CancelledForBrowse = true;
                             if (delta.content.Contains("{download:")) result.CancelledForDownload = true;
+                            if (delta.content.Contains("{web:")) result.CancelledForWeb = true;
                             break;
                         }
                     }
@@ -2374,6 +2433,9 @@ public sealed class SseConsumeResult
 
     /// <summary>正文中出现 {download:"..."} 指令，已提前断流。</summary>
     public bool CancelledForDownload { get; set; }
+
+    /// <summary>正文中出现 {web:"..."} 指令（真浏览器），已提前断流。</summary>
+    public bool CancelledForWeb { get; set; }
 }
 public class ChoiceItem
 {

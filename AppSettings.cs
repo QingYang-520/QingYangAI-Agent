@@ -386,6 +386,93 @@ public static class AppSettings
         set => Preferences.Default.Set("BrowserPermission", value);
     }
 
+    // ─────────── AI 浏览器（设置页「🌐 AI 浏览器」分区）───────────
+
+    /// <summary>是否允许 AI 用真浏览器（跑 JS / 点按钮 / 填表单 / 登录）。关掉只剩 {browse:} 读静态页。</summary>
+    public static bool AiBrowserEnabled
+    {
+        get => Preferences.Default.Get("AiBrowserEnabled", true);
+        set => Preferences.Default.Set("AiBrowserEnabled", value);
+    }
+
+    /// <summary>是否保存 Cookie。开着 = 保留登录态；关掉 = 每次都是干净会话。</summary>
+    public static bool BrowserSaveCookies
+    {
+        get => Preferences.Default.Get("BrowserSaveCookies", true);
+        set => Preferences.Default.Set("BrowserSaveCookies", value);
+    }
+
+    /// <summary>User-Agent：空 = 默认手机 UA；"desktop" = 桌面 Chrome；其他 = 自定义原串。</summary>
+    public static string BrowserUserAgent
+    {
+        get => Preferences.Default.Get("BrowserUserAgent", "");
+        set => Preferences.Default.Set("BrowserUserAgent", value ?? "");
+    }
+
+    public const string UaMobile =
+        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+    public const string UaDesktop =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+    /// <summary>真正要用的 UA 串。</summary>
+    public static string EffectiveUserAgent => BrowserUserAgent switch
+    {
+        "" or "mobile" => UaMobile,
+        "desktop" => UaDesktop,
+        _ => BrowserUserAgent
+    };
+
+    /// <summary>是否加载图片。关掉省流量（Ta 主要读文字）。</summary>
+    public static bool BrowserLoadImages
+    {
+        get => Preferences.Default.Get("BrowserLoadImages", true);
+        set => Preferences.Default.Set("BrowserLoadImages", value);
+    }
+
+    /// <summary>下载落到哪："" = 工作区；"download" = 公共 Download 目录。</summary>
+    public static string BrowserDownloadDir
+    {
+        get => Preferences.Default.Get("BrowserDownloadDir", "");
+        set => Preferences.Default.Set("BrowserDownloadDir", value ?? "");
+    }
+
+    /// <summary>单个文件下载上限（MB）。</summary>
+    public static int BrowserMaxDownloadMb
+    {
+        get => Preferences.Default.Get("BrowserMaxDownloadMb", 300);
+        set => Preferences.Default.Set("BrowserMaxDownloadMb", Math.Clamp(value, 1, 4096));
+    }
+
+    // ── 浏览历史（最近 50 条）──
+
+    public static string BrowserHistoryJson
+    {
+        get => Preferences.Default.Get("BrowserHistoryJson", "[]");
+        set => Preferences.Default.Set("BrowserHistoryJson", value ?? "[]");
+    }
+
+    public static List<string> BrowserHistory()
+    {
+        try { return JsonSerializer.Deserialize<List<string>>(BrowserHistoryJson) ?? new(); }
+        catch { return new(); }
+    }
+
+    /// <summary>记一条浏览/下载历史（最新的在最前）。</summary>
+    public static void AddBrowserHistory(string what)
+    {
+        if (string.IsNullOrWhiteSpace(what)) return;
+        try
+        {
+            var list = BrowserHistory();
+            list.Insert(0, DateTime.Now.ToString("MM-dd HH:mm") + "  " + what.Trim());
+            if (list.Count > 50) list.RemoveRange(50, list.Count - 50);
+            BrowserHistoryJson = JsonSerializer.Serialize(list);
+        }
+        catch { }
+    }
+
+    public static void ClearBrowserHistory() => BrowserHistoryJson = "[]";
+
     /// <summary>完全访问：放开全部限制（含文件删除、越界路径、系统目录警告）。</summary>
     public static bool FullAccess
     {
@@ -626,6 +713,16 @@ public static class AppSettings
         "一次最多输出一条 {download:...}。" +
         "**记住区别**：{browse:} 只能读网页上的文字，下不了文件；要下文件必须用 {download:}。" +
         "拿不准直链就先 {browse:} 去查，或直接问用户要链接——但别假装下好了。" +
+
+        "【真浏览器能力（比 {browse:} 强得多）】" +
+        "需要跑 JS 才显示内容的网站（知乎/掘金/淘宝/各种单页应用）、要点按钮翻页、要填搜索框、要登录 —— 用 {web:\"动作 参数\"}，" +
+        "客户端会拿一个真浏览器打开页面替你操作。可用动作：" +
+        "open <网址>（打开并读回渲染后的正文）、text（再读一次当前页正文）、links（列出页面链接）、" +
+        "click <按钮上的文字或 CSS 选择器>、type <选择器>|<要填的字>、scroll bottom（滚到底触发加载）、back、url。" +
+        "一次只输出一条 {web:...}，拿到结果再决定下一步。" +
+        "**怎么选**：只要一段文字、页面是静态的 → 用 {browse:}（快、省）；" +
+        "JS 渲染的站、要点击、要翻页、要登录 → 用 {web:}。" +
+        "如果你用 {browse:} 读回来是空的或者只有一堆导航，那基本就是 JS 渲染的页面，改用 {web:\"open 同一个网址\"}。" +
 
         "【心情与形象（回复末尾可选）】" +
         "回复末尾可以输出一行 {mood:\"一个词\"} 更新你的心情（用户看不到这行，仅内在地影响你）；想给自己换头像时输出一行 {avatar:\"自画像描述\"}。";

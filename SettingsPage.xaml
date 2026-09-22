@@ -465,6 +465,66 @@
                 </Border>
             </VerticalStackLayout>
 
+            <!-- ══════════ 🌐 AI 浏览器 ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <Label Text="🌐 AI 浏览器" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="10">
+
+                        <HorizontalStackLayout Spacing="10">
+                            <Switch x:Name="swAiBrowser" Toggled="OnAiBrowserToggled"/>
+                            <Label x:Name="lblAiBrowserDesc" Text="开启" TextColor="#9E8D8C" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+                        <Label Text="开启后 Ta 能真的用浏览器：跑 JS 渲染的页面、点按钮、翻页、填表单、登录。关掉就只剩「读静态网页」那点能力（{browse:}）。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <BoxView HeightRequest="1" Color="#2F2928"/>
+
+                        <HorizontalStackLayout Spacing="10">
+                            <Switch x:Name="swSaveCookies" Toggled="OnSaveCookiesToggled"/>
+                            <Label x:Name="lblSaveCookiesDesc" Text="保存 Cookie" TextColor="#9E8D8C" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+                        <Label Text="开着 = 保留登录态，Ta 下次访问同一个网站还是登录着的；关掉 = 每次都当新访客，不记任何登录信息。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <HorizontalStackLayout Spacing="10">
+                            <Switch x:Name="swLoadImages" Toggled="OnLoadImagesToggled"/>
+                            <Label x:Name="lblLoadImagesDesc" Text="加载图片" TextColor="#9E8D8C" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+                        <Label Text="关掉省流量（Ta 主要读文字）。但有些网站的懒加载靠图片触发，读不出内容时把它打开。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <BoxView HeightRequest="1" Color="#2F2928"/>
+
+                        <Label Text="User-Agent（伪装成什么设备）" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                        <Picker x:Name="picUserAgent" Title="选择" BackgroundColor="#2F2928" TextColor="White"
+                                SelectedIndexChanged="OnUserAgentChanged"/>
+                        <Entry x:Name="entUserAgent" Placeholder="自定义 UA（上面选「自定义」时才生效）"
+                               PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"
+                               TextChanged="OnUserAgentTextChanged"/>
+                        <Label Text="有些网站给手机和桌面端返回的内容不一样，读不到东西时换个 UA 试试。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <Label Text="下载保存到" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                        <Picker x:Name="picDownloadDir" Title="选择" BackgroundColor="#2F2928" TextColor="White"
+                                SelectedIndexChanged="OnDownloadDirChanged"/>
+
+                        <Label Text="单个文件下载上限（MB）" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                        <Entry x:Name="entMaxDownloadMb" Keyboard="Numeric" Placeholder="300"
+                               PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"
+                               Unfocused="OnMaxDownloadMbChanged"/>
+
+                        <BoxView HeightRequest="1" Color="#2F2928"/>
+
+                        <Label x:Name="lblBrowserHistory" Text="浏览历史：0 条" FontSize="12" TextColor="#9E8D8C"/>
+                        <Button x:Name="btnViewHistory" Text="查看浏览历史" BackgroundColor="#3A3333" TextColor="White" Clicked="OnViewHistoryClicked"/>
+                        <Button x:Name="btnClearCookies" Text="清除 Cookie（退出所有登录）" BackgroundColor="#3A3333" TextColor="#F2B8B5" Clicked="OnClearCookiesClicked"/>
+                        <Button x:Name="btnClearHistory" Text="清空浏览历史" BackgroundColor="#3A3333" TextColor="#F2B8B5" Clicked="OnClearHistoryClicked"/>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
             <!-- ══════════ 🧠 记忆与形象 ══════════ -->
             <VerticalStackLayout Spacing="10">
                 <Label Text="🧠 记忆与形象" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>

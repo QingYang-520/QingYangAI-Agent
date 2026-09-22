@@ -14,6 +14,15 @@
     </ContentPage.Background>
 
     <Grid>
+        <!-- Ta 的隐藏浏览器：给 AI 当"手"用（跑 JS / 点按钮 / 填表单 / 翻页）。
+             2×2 塞在最底层、被标题栏盖住 —— 用户看不见也点不到；
+             但必须在可视树里、尺寸非 0，Android WebView 才拿得到 handler 和渲染上下文。 -->
+        <WebView x:Name="agentWeb"
+                 WidthRequest="2" HeightRequest="2"
+                 Opacity="0.01"
+                 InputTransparent="True"
+                 HorizontalOptions="Start" VerticalOptions="Start"/>
+
         <!-- 消息列表（启动时隐藏，等历史加载完定位到底部后再显示）：
              玻璃档位下铺满全屏（内容从三根玻璃栏下穿过，被模糊垫层虚化）；关闭档由代码动态加避让边距 -->
 <CollectionView x:Name="msgList" Margin="0,0,0,76"

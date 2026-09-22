@@ -12,7 +12,7 @@ public static class InstructionParser
     {
         "{cmd:\"", "{api:\"", "{img:\"", "{mood:\"", "{avatar:\"", "{say:\"",
         "{read:\"", "{write:\"", "{append:\"", "{edit:\"", "{ls:\"", "{del:\"",
-        "{download:\"", "{browse:\"",
+        "{download:\"", "{browse:\"", "{web:\"",
         "{done:\"", "{todo:\"", "{plan:\"",
     };
 

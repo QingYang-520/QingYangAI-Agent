@@ -12,27 +12,57 @@ namespace 青阳AI;
 /// </summary>
 public static class BrowserTool
 {
-    private const string UserAgent =
-        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
-
     /// <summary>抓网页正文用（短超时，读不到就赶紧报错）。</summary>
-    private static readonly HttpClient _http = new();
+    private static readonly HttpClient _http;
 
     /// <summary>下文件用（长超时——一个几十 MB 的包 20 秒下不完）。</summary>
-    private static readonly HttpClient _dl = new();
+    private static readonly HttpClient _dl;
 
-    /// <summary>单个文件下载上限：300 MB（防止模型手滑下个几 G 的东西把存储塞满）。</summary>
-    public const long MaxDownloadBytes = 300L * 1024 * 1024;
+    /// <summary>Cookie 罐子：让 HttpClient 也保持登录态（设置里「保存 Cookie」控制）。</summary>
+    private static readonly System.Net.CookieContainer _cookies = new();
+
+    /// <summary>单个文件下载上限兜底（设置里可调，默认 300 MB）。</summary>
+    public const long DefaultMaxDownloadBytes = 300L * 1024 * 1024;
 
     static BrowserTool()
     {
-        // 带上 UA，避免被一些网站挡
-        _http.DefaultRequestHeaders.Add("User-Agent", UserAgent);
-        _http.Timeout = TimeSpan.FromSeconds(20);
+        // 自动跟随重定向 + 自动解压 + 共享 Cookie 罐
+        System.Net.Http.HttpClientHandler NewHandler() => new()
+        {
+            CookieContainer = _cookies,
+            AllowAutoRedirect = true,
+            AutomaticDecompression = System.Net.DecompressionMethods.All,
+            UseCookies = true
+        };
 
-        _dl.DefaultRequestHeaders.Add("User-Agent", UserAgent);
-        _dl.Timeout = TimeSpan.FromMinutes(10);
+        _http = new HttpClient(NewHandler()) { Timeout = TimeSpan.FromSeconds(20) };
+        _dl = new HttpClient(NewHandler()) { Timeout = TimeSpan.FromMinutes(10) };
+
+        ApplySettings();
     }
+
+    /// <summary>把设置里的 UA 应用到两个 HttpClient（设置页改 UA 时调用）。</summary>
+    public static void ApplySettings()
+    {
+        try
+        {
+            foreach (var c in new[] { _http, _dl })
+            {
+                c.DefaultRequestHeaders.UserAgent.Clear();
+                c.DefaultRequestHeaders.UserAgent.ParseAdd(AppSettings.EffectiveUserAgent);
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>清掉 HttpClient 这边的 Cookie（设置页「清除 Cookie」调用）。</summary>
+    public static void ClearCookies()
+    {
+        try { _cookies.Clear(); } catch { }
+    }
+
+    /// <summary>当前生效的下载上限（字节）。</summary>
+    private static long MaxBytes => Math.Max(1, AppSettings.BrowserMaxDownloadMb) * 1024L * 1024;
 
     /// <summary>
     /// 后台访问一个 URL，返回正文摘要（标题 + 正文，≤6000 字）。
@@ -120,14 +150,20 @@ public static class BrowserTool
                 return (false, $"下载失败：HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}", "");
 
             var declared = resp.Content.Headers.ContentLength;
-            if (declared is > MaxDownloadBytes)
-                return (false, $"文件太大（{HumanSize(declared.Value)}），超过 300 MB 上限，没下。", "");
+            if (declared is > 0 && declared.Value > MaxBytes)
+                return (false, $"文件太大（{HumanSize(declared.Value)}），超过 {AppSettings.BrowserMaxDownloadMb} MB 上限，没下。", "");
 
+            // 落盘目录：设置里选了「公共 Download」且确实能写就用它，否则退回工作区
             var dir = AppSettings.EffectiveWorkspacePath;
+            if (AppSettings.BrowserDownloadDir == "download" && StorageAccess.IsAllFilesGranted())
+            {
+                var dl = StorageAccess.PublicDownloads;
+                if (!string.IsNullOrEmpty(dl)) dir = dl;
+            }
             if (string.IsNullOrWhiteSpace(dir))
-                return (false, "工作区路径解析失败。", "");
+                return (false, "保存目录解析失败。", "");
             if (!StorageAccess.EnsureDir(dir))
-                return (false, "工作区目录建不出来，可能没有写权限。", "");
+                return (false, "保存目录建不出来，可能没有写权限。", "");
 
             var full = UniquePath(Path.Combine(dir, GuessFileName(resp, url)));
 
@@ -140,16 +176,17 @@ public static class BrowserTool
                 while ((n = await src.ReadAsync(buf)) > 0)
                 {
                     written += n;
-                    if (written > MaxDownloadBytes)
+                    if (written > MaxBytes)
                     {
                         await dst.DisposeAsync();
                         try { File.Delete(full); } catch { }
-                        return (false, "文件超过 300 MB 上限，已中断并删掉半截文件。", "");
+                        return (false, $"文件超过 {AppSettings.BrowserMaxDownloadMb} MB 上限，已中断并删掉半截文件。", "");
                     }
                     await dst.WriteAsync(buf.AsMemory(0, n));
                 }
             }
 
+            AppSettings.AddBrowserHistory("下载 " + Path.GetFileName(full) + $"（{HumanSize(written)}）");
             var shown = StorageAccess.ToDisplay(full);
             var note = StorageAccess.WorkspaceVisible ? "" : "（注意：工作区在应用私有目录，文件管理器看不到，需要的话点「导出工作区到 Download」搬出来）";
             return (true, $"已下载 {Path.GetFileName(full)}，{HumanSize(written)}，位置：{shown}{note}", full);

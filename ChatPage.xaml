@@ -373,7 +373,7 @@
                 <!-- 下面两个：独立复选 -->
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                     <Label Text="🌐" FontSize="14" VerticalOptions="Center"/>
-                    <Label Grid.Column="1" Text="允许 AI 使用浏览器" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
+                    <Label Grid.Column="1" Text="允许 AI 联网（浏览 + 下载文件）" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
                     <Label x:Name="chkBrowser" Grid.Column="2" Text="☐" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Tapped="OnPermBrowserTapped"/>

@@ -12,6 +12,7 @@ public static class InstructionParser
     {
         "{cmd:\"", "{api:\"", "{img:\"", "{mood:\"", "{avatar:\"", "{say:\"",
         "{read:\"", "{write:\"", "{append:\"", "{edit:\"", "{ls:\"", "{del:\"",
+        "{download:\"", "{browse:\"",
         "{done:\"", "{todo:\"", "{plan:\"",
     };
 
@@ -35,6 +36,34 @@ public static class InstructionParser
             idx = valueEnd + 1;
         }
         return results;
+    }
+
+    /// <summary>
+    /// 把文本里**所有指令 token**（`{marker:"值"}`）整段删掉，只留自然语言。
+    ///
+    /// 指令只做副作用，不该出现在聊天气泡里、也不该被存进历史。
+    /// 注意：必须在**管线跑完之后**才调用 —— 管线（{cmd}/{api}/{img}/{browse}/{download}）
+    /// 还得从原文里把参数抠出来，提前删了它们就取不到地址了。
+    /// </summary>
+    public static string RemoveInstructions(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+        foreach (var m in Markers)
+        {
+            int idx = 0;
+            while (idx < text.Length)
+            {
+                int start = text.IndexOf(m, idx, StringComparison.Ordinal);
+                if (start < 0) break;
+                int end = text.IndexOf('"', start + m.Length);
+                if (end < 0) break;
+                int close = text.IndexOf('}', end);
+                if (close < 0) break;
+                text = text.Remove(start, close - start + 1);
+                idx = start;
+            }
+        }
+        return text.Trim();
     }
 
     /// <summary>

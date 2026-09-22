@@ -5,20 +5,33 @@ using System.Text.RegularExpressions;
 namespace 青阳AI;
 
 /// <summary>
-/// AI 的上网工具：用 {browse:"url"} 让 AI 后台访问网页，提取正文回传。
-/// 走 HttpClient（宿主网络栈：Wi-Fi/蜂窩/DNS/代理），不需要 UI WebView。
-/// 抽取正文：去 script/style/nav/footer，取 body innerText，截断 6000 字。
+/// AI 的上网工具：
+///   · {browse:"url"}  —— 后台访问网页，提取正文回传（只读文本）
+///   · {download:"url"} —— 把文件真的下下来存到工作区（二进制，见 DownloadAsync）
+/// 走 HttpClient（宿主网络栈：Wi-Fi/蜂窝/DNS/代理），不需要 UI WebView。
 /// </summary>
 public static class BrowserTool
 {
+    private const string UserAgent =
+        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+
+    /// <summary>抓网页正文用（短超时，读不到就赶紧报错）。</summary>
     private static readonly HttpClient _http = new();
+
+    /// <summary>下文件用（长超时——一个几十 MB 的包 20 秒下不完）。</summary>
+    private static readonly HttpClient _dl = new();
+
+    /// <summary>单个文件下载上限：300 MB（防止模型手滑下个几 G 的东西把存储塞满）。</summary>
+    public const long MaxDownloadBytes = 300L * 1024 * 1024;
 
     static BrowserTool()
     {
         // 带上 UA，避免被一些网站挡
-        _http.DefaultRequestHeaders.Add("User-Agent",
-            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
+        _http.DefaultRequestHeaders.Add("User-Agent", UserAgent);
         _http.Timeout = TimeSpan.FromSeconds(20);
+
+        _dl.DefaultRequestHeaders.Add("User-Agent", UserAgent);
+        _dl.Timeout = TimeSpan.FromMinutes(10);
     }
 
     /// <summary>
@@ -81,6 +94,74 @@ public static class BrowserTool
             sb.AppendLine();
         }
         return sb.ToString();
+    }
+
+    // ───────────── 下载文件 ─────────────
+
+    /// <summary>
+    /// 真的把一个文件下下来，存进工作区（`{download:"url"}` 走这里）。
+    ///
+    /// 这是 Ta「把东西弄到本地」的唯一通道 —— FetchAsync 只把网页正文读成文字，
+    /// 遇到 apk / zip / 图片这类二进制它什么也拿不到，只能把网址念给用户听。
+    ///
+    /// 返回 (是否成功, 给人看的说明, 落盘的绝对路径)。绝不抛异常。
+    /// </summary>
+    public static async Task<(bool Ok, string Message, string Path)> DownloadAsync(string rawUrl)
+    {
+        if (string.IsNullOrWhiteSpace(rawUrl))
+            return (false, "没给下载地址。", "");
+
+        var url = NormalizeUrl(rawUrl);
+
+        try
+        {
+            using var resp = await _dl.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+            if (!resp.IsSuccessStatusCode)
+                return (false, $"下载失败：HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}", "");
+
+            var declared = resp.Content.Headers.ContentLength;
+            if (declared is > MaxDownloadBytes)
+                return (false, $"文件太大（{HumanSize(declared.Value)}），超过 300 MB 上限，没下。", "");
+
+            var dir = AppSettings.EffectiveWorkspacePath;
+            if (string.IsNullOrWhiteSpace(dir))
+                return (false, "工作区路径解析失败。", "");
+            if (!StorageAccess.EnsureDir(dir))
+                return (false, "工作区目录建不出来，可能没有写权限。", "");
+
+            var full = UniquePath(Path.Combine(dir, GuessFileName(resp, url)));
+
+            long written = 0;
+            await using (var src = await resp.Content.ReadAsStreamAsync())
+            await using (var dst = File.Create(full))
+            {
+                var buf = new byte[81920];
+                int n;
+                while ((n = await src.ReadAsync(buf)) > 0)
+                {
+                    written += n;
+                    if (written > MaxDownloadBytes)
+                    {
+                        await dst.DisposeAsync();
+                        try { File.Delete(full); } catch { }
+                        return (false, "文件超过 300 MB 上限，已中断并删掉半截文件。", "");
+                    }
+                    await dst.WriteAsync(buf.AsMemory(0, n));
+                }
+            }
+
+            var shown = StorageAccess.ToDisplay(full);
+            var note = StorageAccess.WorkspaceVisible ? "" : "（注意：工作区在应用私有目录，文件管理器看不到，需要的话点「导出工作区到 Download」搬出来）";
+            return (true, $"已下载 {Path.GetFileName(full)}，{HumanSize(written)}，位置：{shown}{note}", full);
+        }
+        catch (TaskCanceledException)
+        {
+            return (false, "下载超时（超过 10 分钟）。", "");
+        }
+        catch (Exception ex)
+        {
+            return (false, "下载失败：" + ex.Message, "");
+        }
     }
 
     // ───────────── 内部工具 ─────────────
@@ -194,5 +275,84 @@ public static class BrowserTool
             .Replace("&hellip;", "…")
             .Replace("&mdash;", "—")
             .Replace("&ndash;", "–");
+    }
+
+    // ───────────── 下载用的小工具 ─────────────
+
+    /// <summary>猜文件名：优先 Content-Disposition，其次 URL 末段，最后按 MIME 兜底。</summary>
+    private static string GuessFileName(HttpResponseMessage resp, string url)
+    {
+        // 1) Content-Disposition: attachment; filename="xxx.apk"
+        try
+        {
+            var cd = resp.Content.Headers.ContentDisposition;
+            var n = cd?.FileNameStar ?? cd?.FileName;
+            if (!string.IsNullOrWhiteSpace(n))
+                return Sanitize(n.Trim().Trim('"'));
+        }
+        catch { }
+
+        // 2) URL 路径最后一段（GitHub releases 的直链一般带文件名）
+        try
+        {
+            var last = new Uri(url).AbsolutePath
+                .Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+            if (!string.IsNullOrWhiteSpace(last) && last.Contains('.'))
+                return Sanitize(Uri.UnescapeDataString(last));
+        }
+        catch { }
+
+        // 3) 按 MIME 猜扩展名，再不行就 .bin
+        var ext = ".bin";
+        try
+        {
+            ext = (resp.Content.Headers.ContentType?.MediaType ?? "") switch
+            {
+                "application/vnd.android.package-archive" => ".apk",
+                "application/zip" => ".zip",
+                "application/x-zip-compressed" => ".zip",
+                "application/pdf" => ".pdf",
+                "application/json" => ".json",
+                "text/plain" => ".txt",
+                "image/png" => ".png",
+                "image/jpeg" => ".jpg",
+                "image/webp" => ".webp",
+                _ => ".bin"
+            };
+        }
+        catch { }
+        return "下载_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ext;
+    }
+
+    /// <summary>洗掉文件名里的非法字符和路径分隔符——防止 `../` 之类越界写到工作区外面。</summary>
+    private static string Sanitize(string name)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
+        name = name.Replace('/', '_').Replace('\\', '_').Replace("..", "_");
+        if (name.Length > 120) name = name[..120];
+        return string.IsNullOrWhiteSpace(name) ? "download.bin" : name;
+    }
+
+    /// <summary>重名自动加 (1)(2)…，不覆盖已有文件。</summary>
+    private static string UniquePath(string target)
+    {
+        if (!File.Exists(target)) return target;
+        var dir = Path.GetDirectoryName(target) ?? "";
+        var stem = Path.GetFileNameWithoutExtension(target);
+        var ext = Path.GetExtension(target);
+        for (int i = 1; i < 1000; i++)
+        {
+            var c = Path.Combine(dir, $"{stem}({i}){ext}");
+            if (!File.Exists(c)) return c;
+        }
+        return target;
+    }
+
+    private static string HumanSize(long bytes)
+    {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024.0).ToString("0.0") + " KB";
+        if (bytes < 1024L * 1024 * 1024) return (bytes / 1024.0 / 1024).ToString("0.0") + " MB";
+        return (bytes / 1024.0 / 1024 / 1024).ToString("0.00") + " GB";
     }
 }

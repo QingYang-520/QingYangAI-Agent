@@ -764,8 +764,75 @@ InitializeComponent();
                 await ConsumeSseAsync(continueResp, aiBubble);
             }
         }
+        else if (sseResult.CancelledForDownload)
+        {
+            // 检测到下载指令：真的把文件下到工作区
+            await RunDownloadPipelineAsync(text, aiBubble);
+        }
+        // 管线都跑完了，指令已经没用了：从气泡里整段抹掉，别让用户看到 {download:"…"} 这种东西
+        aiBubble.Content = InstructionParser.RemoveInstructions(aiBubble.Content);
         _ = ChatStore.Instance.SaveMessageAsync(aiBubble);
         await SpeakIfEnabledAsync(aiBubble.Content);
+    }
+
+    /// <summary>提取下载指令（{download:"..."}）。</summary>
+    private string ExtractDownloadCommand(string text)
+    {
+        var start = text.IndexOf("{download:\"");
+        if (start < 0) return "";
+        var end = text.IndexOf("\"}", start + 11);
+        if (end < start) return "";
+        return text.Substring(start + 11, end - start - 11).Trim();
+    }
+
+    /// <summary>
+    /// 下载管线：{download:"url"} → 真的把文件下到工作区 → 结果回传给模型继续说话。
+    ///
+    /// 为什么要有这条：Ta 原先只有 {browse:} 一种联网能力，而 browse 只把网页正文读成文字，
+    /// 遇到 apk / zip / 图片这类二进制它什么也拿不到 —— 于是只能把网址念给用户听。
+    /// 这条管线把"手"接上。
+    /// </summary>
+    private async Task RunDownloadPipelineAsync(string userText, ChatMsg aiBubble)
+    {
+        if (!AppSettings.BrowserPermission)
+        {
+            aiBubble.Content = "（联网能力已关闭，没法下载。需要的话去设置页打开「允许 AI 联网」。）";
+            return;
+        }
+
+        var url = ExtractDownloadCommand(aiBubble.Content);
+        if (string.IsNullOrEmpty(url))
+        {
+            aiBubble.Content = "（没拿到有效的下载地址。）";
+            return;
+        }
+
+        var (ok, msg, _) = await BrowserTool.DownloadAsync(url);
+
+        var hint = ok
+            ? $"【下载结果】{msg}\n\n请用一两句话告诉用户：文件已经下好了、放在哪个路径、下一步怎么打开或安装（apk 的话提示他去文件管理器点一下安装）。不要再输出 {{download:...}}。"
+            : $"【下载失败】{msg}\n\n请用一两句话如实告诉用户失败了，猜一下原因（网络不通 / 地址失效 / 没有存储权限 / 文件太大），并给个替代办法。不要再输出 {{download:...}}。";
+
+        var continueMessages = new List<object>
+        {
+            new { role = "system", content = AppSettings.BuildSystemPrompt() },
+            new { role = "user", content = userText },
+            new { role = "assistant", content = InstructionParser.RemoveInstructions(aiBubble.Content) },
+            new { role = "user", content = hint }
+        };
+        try
+        {
+            var body = BuildChatBody(AppSettings.ResolveChatModel(AppSettings.ForceThinking), continueMessages, stream: true);
+            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content);
+            resp.EnsureSuccessStatusCode();
+            await ConsumeSseAsync(resp, aiBubble);
+        }
+        catch (Exception ex)
+        {
+            aiBubble.Content = ok ? "文件下好了：" + msg : "下载失败：" + msg;
+            _ = ex;
+        }
     }
 
     /// <summary>构建请求体（支持推理开关）。流式请求带 stream_options 让 DeepSeek 等返回 usage，供上下文/缓存统计。</summary>
@@ -821,15 +888,17 @@ InitializeComponent();
                         // 正文开始 = 思考过程结束：冻结用时（此后不再累加）
                         aiBubble.IsThinkingActive = false;
                         result.ThinkingFrozen = true;
-                        // 检测指令：{cmd:"..."} / {api:"..."} / {img:"..."} / {browse:"..."}
+                        // 检测指令：{cmd:"..."} / {api:"..."} / {img:"..."} / {browse:"..."} / {download:"..."}
                         if (delta.content.Contains("{cmd:") || delta.content.Contains("{api:") || 
-                            delta.content.Contains("{img:") || delta.content.Contains("{browse:"))
+                            delta.content.Contains("{img:") || delta.content.Contains("{browse:") ||
+                            delta.content.Contains("{download:"))
                         {
                             // 提前断流，交给后续管线处理
                             if (delta.content.Contains("{cmd:")) result.CancelledForCommand = true;
                             if (delta.content.Contains("{api:")) result.CancelledForApi = true;
                             if (delta.content.Contains("{img:")) result.CancelledForImage = true;
                             if (delta.content.Contains("{browse:")) result.CancelledForBrowse = true;
+                            if (delta.content.Contains("{download:")) result.CancelledForDownload = true;
                             break;
                         }
                     }
@@ -2302,6 +2371,9 @@ public sealed class SseConsumeResult
     public bool CancelledForImage { get; set; }
     /// <summary>正文中出现 {browse:"..."} 指令，已提前断流。</summary>
     public bool CancelledForBrowse { get; set; }
+
+    /// <summary>正文中出现 {download:"..."} 指令，已提前断流。</summary>
+    public bool CancelledForDownload { get; set; }
 }
 public class ChoiceItem
 {

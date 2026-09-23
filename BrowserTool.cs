@@ -19,7 +19,11 @@ public static class BrowserTool
     private static readonly HttpClient _dl;
 
     /// <summary>Cookie 罐子：让 HttpClient 也保持登录态（设置里「保存 Cookie」控制）。</summary>
-    private static readonly System.Net.CookieContainer _cookies = new();
+    private static System.Net.CookieContainer _cookies = new();
+
+    /// <summary>两个 handler 的引用（清 Cookie 时把新罐子换上去；MAUI 里 HttpClient.Handler 取不到）。</summary>
+    private static readonly System.Net.Http.HttpClientHandler _httpHandler;
+    private static readonly System.Net.Http.HttpClientHandler _dlHandler;
 
     /// <summary>单个文件下载上限兜底（设置里可调，默认 300 MB）。</summary>
     public const long DefaultMaxDownloadBytes = 300L * 1024 * 1024;
@@ -35,8 +39,10 @@ public static class BrowserTool
             UseCookies = true
         };
 
-        _http = new HttpClient(NewHandler()) { Timeout = TimeSpan.FromSeconds(20) };
-        _dl = new HttpClient(NewHandler()) { Timeout = TimeSpan.FromMinutes(10) };
+        _httpHandler = NewHandler();
+        _dlHandler = NewHandler();
+        _http = new HttpClient(_httpHandler) { Timeout = TimeSpan.FromSeconds(20) };
+        _dl = new HttpClient(_dlHandler) { Timeout = TimeSpan.FromMinutes(10) };
 
         ApplySettings();
     }
@@ -58,7 +64,14 @@ public static class BrowserTool
     /// <summary>清掉 HttpClient 这边的 Cookie（设置页「清除 Cookie」调用）。</summary>
     public static void ClearCookies()
     {
-        try { _cookies.Clear(); } catch { }
+        try
+        {
+            // CookieContainer 没有 Clear()，换一个新罐子并挂到两个 handler 上
+            _cookies = new System.Net.CookieContainer();
+            _httpHandler.CookieContainer = _cookies;
+            _dlHandler.CookieContainer = _cookies;
+        }
+        catch { }
     }
 
     /// <summary>当前生效的下载上限（字节）。</summary>
@@ -94,6 +107,10 @@ public static class BrowserTool
             sb.AppendLine();
             sb.AppendLine("正文：");
             sb.AppendLine(text);
+
+            // 把页面上的链接也带上 —— 只给正文的话，模型看不到 href，
+            // 想下载时只能去猜"assets 常见命名"，永远猜不中。
+            sb.Append(ExtractLinks(html, url));
 
             return sb.ToString();
         }
@@ -312,6 +329,84 @@ public static class BrowserTool
             .Replace("&hellip;", "…")
             .Replace("&mdash;", "—")
             .Replace("&ndash;", "–");
+    }
+
+    // ───────────── 链接抽取 ─────────────
+
+    /// <summary>
+    /// 从 HTML 里抠出链接（相对路径绝对化 + 去重），"看起来像能直接下到文件"的单独排一块。
+    ///
+    /// 为什么需要：原来只把正文给模型，它看不到 href ——
+    /// 于是想下载时只能瞎猜「assets 常见的 URL 命名」，永远猜不中。
+    /// </summary>
+    private static string ExtractLinks(string html, string baseUrl)
+    {
+        try
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var fileish = new List<string>();
+            var other = new List<string>();
+
+            foreach (Match m in Regex.Matches(html,
+                @"<a\s[^>]*href\s*=\s*[""']([^""']+)[""'][^>]*>(.*?)</a>",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline))
+            {
+                var href = DecodeHtmlEntities(m.Groups[1].Value.Trim());
+                if (href.Length == 0) continue;
+                if (href.StartsWith('#') ||
+                    href.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase) ||
+                    href.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)) continue;
+
+                string abs;
+                try { abs = new Uri(new Uri(baseUrl), href).AbsoluteUri; }
+                catch { continue; }
+                if (!abs.StartsWith("http", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!seen.Add(abs)) continue;
+
+                var text = Regex.Replace(m.Groups[2].Value, @"<[^>]+>", " ");
+                text = Regex.Replace(DecodeHtmlEntities(text), @"\s+", " ").Trim();
+                if (text.Length > 70) text = text[..70];
+
+                var line = (text.Length == 0 ? "(无文字)" : text) + " -> " + abs;
+                if (LooksLikeFile(abs) || LooksLikeFile(text)) fileish.Add(line);
+                else other.Add(line);
+
+                if (fileish.Count + other.Count >= 150) break;
+            }
+
+            if (fileish.Count == 0 && other.Count == 0) return "";
+
+            var sb = new StringBuilder();
+            if (fileish.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("【页面上的文件 / 下载链接】（要下载就从这里挑直链，别自己猜命名）");
+                foreach (var l in fileish.Take(30)) sb.AppendLine("  " + l);
+            }
+            if (other.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("【其他链接】（最多 30 条，想深入某个页面可以挑一个再访问）");
+                foreach (var l in other.Take(30)) sb.AppendLine("  " + l);
+            }
+            return sb.ToString();
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>看起来像「能直接下到文件」的地址或文字。</summary>
+    private static bool LooksLikeFile(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return false;
+        var lower = s.ToLowerInvariant();
+        foreach (var ext in new[]
+        {
+            ".apk", ".zip", ".rar", ".7z", ".tar", ".gz", ".xz", ".bz2",
+            ".exe", ".msi", ".dmg", ".pdf", ".deb", ".rpm", ".iso", ".img", ".apks"
+        })
+            if (lower.Contains(ext)) return true;
+
+        return lower.Contains("/releases/download") || lower.Contains("/download/");
     }
 
     // ───────────── 下载用的小工具 ─────────────

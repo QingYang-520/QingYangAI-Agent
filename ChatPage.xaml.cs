@@ -13,7 +13,9 @@ namespace 青阳AI;
 
 public partial class ChatPage : ContentPage
 {
-    private static readonly HttpClient _httpClient = new();
+    // 超时放宽到 5 分钟：流式请求的 Timeout 覆盖整个响应体读取，
+    // 用默认 100 秒的话，长回复（尤其带深度思考的）会被中途掐断。
+    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromMinutes(5) };
     public ObservableCollection<ChatMsg> Messages { get; set; }
     private DateTime _pressTime;
     private ChatMsg? _pressedMsg;
@@ -723,7 +725,7 @@ InitializeComponent();
         var reqBody = BuildChatBody(model, messages, stream: true);
         var json = JsonSerializer.Serialize(reqBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content);
+        var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content, HttpCompletionOption.ResponseHeadersRead);
         resp.EnsureSuccessStatusCode();
 
         // 流式处理：实时显示，同时检测指令（{cmd:"..."} / {api:"..."} / {img:"..."} / {browse:"..."}）
@@ -761,7 +763,7 @@ InitializeComponent();
                 var continueReq = BuildChatBody(model, continueMessages, stream: true);
                 var continueJson = JsonSerializer.Serialize(continueReq);
                 var continueContent = new StringContent(continueJson, Encoding.UTF8, "application/json");
-                var continueResp = await _httpClient.PostAsync(AppSettings.ApiUrl, continueContent);
+                var continueResp = await _httpClient.PostAsync(AppSettings.ApiUrl, continueContent, HttpCompletionOption.ResponseHeadersRead);
                 continueResp.EnsureSuccessStatusCode();
                 await ConsumeSseAsync(continueResp, aiBubble);
             }
@@ -833,7 +835,7 @@ InitializeComponent();
         {
             var body = BuildChatBody(AppSettings.ResolveChatModel(AppSettings.ForceThinking), continueMessages, stream: true);
             var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content);
+            var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content, HttpCompletionOption.ResponseHeadersRead);
             resp.EnsureSuccessStatusCode();
             await ConsumeSseAsync(resp, aiBubble);
         }
@@ -882,7 +884,7 @@ InitializeComponent();
         {
             var body = BuildChatBody(AppSettings.ResolveChatModel(AppSettings.ForceThinking), continueMessages, stream: true);
             var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content);
+            var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content, HttpCompletionOption.ResponseHeadersRead);
             resp.EnsureSuccessStatusCode();
             await ConsumeSseAsync(resp, aiBubble);
         }
@@ -1189,7 +1191,7 @@ InitializeComponent();
         var reqBody = BuildChatBody(model, messages, stream: true);
         var json = JsonSerializer.Serialize(reqBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content);
+        var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content, HttpCompletionOption.ResponseHeadersRead);
         resp.EnsureSuccessStatusCode();
 
         using var stream = await resp.Content.ReadAsStreamAsync();
@@ -1588,7 +1590,7 @@ InitializeComponent();
         var reqBody = BuildChatBody(model, messages, stream: true);
         var json = JsonSerializer.Serialize(reqBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content);
+        var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content, HttpCompletionOption.ResponseHeadersRead);
         resp.EnsureSuccessStatusCode();
 
         using var stream = await resp.Content.ReadAsStreamAsync();

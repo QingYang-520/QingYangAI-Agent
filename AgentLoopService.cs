@@ -88,6 +88,10 @@ public static class AgentLoopService
         // 避免因为模型不听话就把整轮任务判死（这是之前"退化成 chat 模式"的主因）。
         const int MaxIdleRounds = 2;
         int idleRounds = 0;
+        // "模型吐了客户端不认识的指令"也要有次数上限 —— 否则模型反复吐同一个错标记时，
+        // 会一直 continue 空转（每轮还带一次网络请求），用户看到的就是"一直转圈"。
+        const int MaxUnknownRounds = 2;
+        int unknownRounds = 0;
         // 最近一次模型说的话，兜底收尾时用作最终答复
         string lastSaid = "";
 
@@ -142,9 +146,10 @@ public static class AgentLoopService
                 // 直接把不认识的那个标记回去问清楚（否则会静默空转到兜底收尾，
                 // 用户看到的就是"任务还没做完，但我没能继续推进"这种甩锅话）。
                 var unknown = FindUnknownMarker(reply);
-                if (unknown != null)
+                if (unknown != null && unknownRounds < MaxUnknownRounds)
                 {
-                    run.AddStep("think", $"不认识的指令 {unknown}");
+                    unknownRounds++;
+                    run.AddStep("think", $"不认识的指令 {unknown}（第 {unknownRounds} 次）");
                     messages.Add(new { role = "assistant", content = reply });
                     messages.Add(new
                     {
@@ -158,6 +163,7 @@ public static class AgentLoopService
                     continue;
                 }
 
+                // 认不出也催过上限了，就按"空转"处理，别无限拖
                 idleRounds++;
                 run.AddStep("think", idleRounds == 1 ? "尚未给出动作，催促继续" : "仍未给出动作");
 

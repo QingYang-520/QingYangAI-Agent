@@ -17,6 +17,9 @@ public partial class ChatPage : ContentPage
     // 用默认 100 秒的话，长回复（尤其带深度思考的）会被中途掐断。
     private static readonly HttpClient _httpClient = CreateHttpClient();
 
+    /// <summary>流式读取时，多久没收到任何数据就判定"卡死"并主动断掉（秒）。</summary>
+    private const int SseStallSeconds = 60;
+
     /// <summary>
     /// 建聊天用的 HttpClient。
     /// 默认走平台原生栈；设置里打开「流式兼容模式」就换纯托管 SocketsHttpHandler ——
@@ -40,22 +43,15 @@ public partial class ChatPage : ContentPage
     }
 
     /// <summary>
-    /// 补上 SSE 流式所需的请求头。
-    /// 显式声明接受事件流 —— 有些网关 / CDN 靠 Accept 决定"边收边发"还是"攒完再发"。
+    /// ⚠️ 曾经在这里给流式请求加 `Accept: text/event-stream` + `Cache-Control: no-cache`，
+    /// 想的是"有些网关靠 Accept 决定边收边发"。**实测没帮助，反而疑似让服务端行为异常
+    /// （表现为一直转圈等不到响应），已撤掉。**
+    /// 流式真正的开关是 `SendAsync(..., HttpCompletionOption.ResponseHeadersRead)`，
+    /// 那个已经到位了，别再往请求头上加猜测性的东西。
     /// </summary>
     private void ApplyStreamingHeaders()
     {
-        try
-        {
-            var h = _httpClient.DefaultRequestHeaders;
-            if (!h.Accept.Any(a => string.Equals(a.MediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase)))
-                h.Accept.ParseAdd("text/event-stream");
-            if (!h.Accept.Any(a => string.Equals(a.MediaType, "application/json", StringComparison.OrdinalIgnoreCase)))
-                h.Accept.ParseAdd("application/json");
-            if (h.CacheControl == null)
-                h.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true };
-        }
-        catch { }
+        // 故意留空：不再设置任何猜测性的请求头
     }
     public ObservableCollection<ChatMsg> Messages { get; set; }
     private DateTime _pressTime;
@@ -773,6 +769,16 @@ InitializeComponent();
 
         // 流式处理：实时显示，同时检测指令（{cmd:"..."} / {api:"..."} / {img:"..."} / {browse:"..."}）
         var sseResult = await ConsumeSseAsync(resp, aiBubble);
+        if (sseResult.Stalled)
+        {
+            // 看门狗叫停：服务器长时间没吐数据，别再让用户干等
+            if (string.IsNullOrWhiteSpace(aiBubble.Content))
+                aiBubble.Content = $"服务器 {SseStallSeconds} 秒没有任何响应，已经断开。\n\n"
+                                 + "常见原因：接口地址填错、网络不通、或者服务商那边卡住了。"
+                                 + "过一会儿再试；一直这样就先去设置里确认 API URL。";
+            _ = ChatStore.Instance.SaveMessageAsync(aiBubble);
+            return;
+        }
         if (sseResult.CancelledForCommand)
         {
             // 检测到 Shizuku 指令：拉取终端命令列表并执行
@@ -991,9 +997,38 @@ InitializeComponent();
         var swDiag = System.Diagnostics.Stopwatch.StartNew();   // 诊断：量首块延迟和总时长
         using var stream = await resp.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
-        string? line;
-        while ((line = await reader.ReadLineAsync()) != null)
+
+        // ── 卡死看门狗 ──
+        // 服务器不响应时，HttpClient.Timeout 要等好几分钟，用户只能一直盯着转圈。
+        // 这里盯着"多久没收到任何数据"，超时就主动断掉并给出明确提示。
+        using var stallCts = new CancellationTokenSource();
+        long lastDataTicks = DateTime.UtcNow.Ticks;
+        _ = Task.Run(async () =>
         {
+            try
+            {
+                while (!stallCts.IsCancellationRequested)
+                {
+                    await Task.Delay(2000, stallCts.Token);
+                    var idle = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - lastDataTicks).TotalSeconds;
+                    if (idle >= SseStallSeconds)
+                    {
+                        result.Stalled = true;
+                        stallCts.Cancel();
+                        return;
+                    }
+                }
+            }
+            catch { }
+        });
+
+        string? line;
+        while (true)
+        {
+            try { line = await reader.ReadLineAsync(stallCts.Token); }
+            catch (OperationCanceledException) { break; }   // 看门狗叫停
+            if (line == null) break;
+            lastDataTicks = DateTime.UtcNow.Ticks;
             if (!line.StartsWith("data: ")) continue;
             var data = line.Substring(6);
             if (data == "[DONE]") break;
@@ -1068,7 +1103,8 @@ InitializeComponent();
         result.TotalMs = (int)swDiag.ElapsedMilliseconds;
         // 摆出来给人看：首块延迟≈总时长 → 卡在网络/服务端；首块很快但界面不动 → 卡在渲染
         AppSettings.LastStreamDiag =
-            $"首块 {result.FirstDeltaMs}ms · 共 {result.Chunks} 块 · 总 {result.TotalMs}ms"
+            (result.Stalled ? $"⚠️ 卡死（{SseStallSeconds} 秒无数据）· " : "")
+            + $"首块 {result.FirstDeltaMs}ms · 共 {result.Chunks} 块 · 总 {result.TotalMs}ms"
             + (result.Chunks <= 1 ? "（只收到一块 = 响应被整段缓冲了）" : "");
         aiBubble.IsThinkingActive = false;
         // 用时只算"首个思考字 → 最后一个思考字"；若思考后直接结束（无正文）也在此冻结
@@ -2535,6 +2571,9 @@ public sealed class SseConsumeResult
 
     /// <summary>整个流收完用了多少毫秒。</summary>
     public int TotalMs { get; set; }
+
+    /// <summary>是否被"卡死看门狗"叫停（服务器长时间没吐数据）。</summary>
+    public bool Stalled { get; set; }
 }
 public class ChoiceItem
 {

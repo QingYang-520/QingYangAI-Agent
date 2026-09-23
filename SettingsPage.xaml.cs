@@ -38,6 +38,7 @@ public partial class SettingsPage : ContentPage
             UpdateSensingStatus();
             UpdateSuperAdminState();
             UpdateWorkspaceHint();   // 从系统设置回来后刷新工作区可见性/权限状态
+            UpdateStreamDiagLabel(); // 聊天页刚发过消息，顺手把流式诊断刷新一下
             _ = UpdateMemoryCountAsync();
             _ = UpdateCompanionLabelAsync();
             // 每次打开设置页都检测连通状态；延迟到导航动画结束后异步执行，避免卡顿
@@ -635,7 +636,21 @@ public partial class SettingsPage : ContentPage
 
         entMaxDownloadMb.Text = AppSettings.BrowserMaxDownloadMb.ToString();
 
+        swManagedHttp.IsToggled = AppSettings.UseManagedHttpStack;
+        UpdateManagedHttpDesc(swManagedHttp.IsToggled);
+        UpdateStreamDiagLabel();
+
         UpdateBrowserHistoryLabel();
+    }
+
+    private void UpdateStreamDiagLabel() => lblStreamDiag.Text = AppSettings.LastStreamDiag;
+
+    private void UpdateManagedHttpDesc(bool on) => lblManagedHttpDesc.Text = on ? "流式兼容模式：开" : "流式兼容模式：关";
+
+    private void OnManagedHttpToggled(object? sender, ToggledEventArgs e)
+    {
+        AppSettings.UseManagedHttpStack = e.Value;
+        UpdateManagedHttpDesc(e.Value);
     }
 
     private void UpdateBrowserHistoryLabel() =>

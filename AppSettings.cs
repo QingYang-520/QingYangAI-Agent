@@ -473,6 +473,21 @@ public static class AppSettings
 
     public static void ClearBrowserHistory() => BrowserHistoryJson = "[]";
 
+    // ── 流式诊断（排查"为什么不是逐块上屏"用）──
+
+    /// <summary>上次流式请求的诊断：首块延迟 / 块数 / 总时长。</summary>
+    public static string LastStreamDiag { get; set; } = "（还没发过请求）";
+
+    /// <summary>
+    /// 流式兼容模式：聊天改用纯托管 SocketsHttpHandler，绕开平台原生网络栈。
+    /// 有些 ROM / 网络栈会把响应偷偷缓冲起来，那样流式就废了。**改完要重启 App。**
+    /// </summary>
+    public static bool UseManagedHttpStack
+    {
+        get => Preferences.Default.Get("UseManagedHttpStack", false);
+        set => Preferences.Default.Set("UseManagedHttpStack", value);
+    }
+
     /// <summary>完全访问：放开全部限制（含文件删除、越界路径、系统目录警告）。</summary>
     public static bool FullAccess
     {

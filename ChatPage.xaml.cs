@@ -15,7 +15,48 @@ public partial class ChatPage : ContentPage
 {
     // 超时放宽到 5 分钟：流式请求的 Timeout 覆盖整个响应体读取，
     // 用默认 100 秒的话，长回复（尤其带深度思考的）会被中途掐断。
-    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromMinutes(5) };
+    private static readonly HttpClient _httpClient = CreateHttpClient();
+
+    /// <summary>
+    /// 建聊天用的 HttpClient。
+    /// 默认走平台原生栈；设置里打开「流式兼容模式」就换纯托管 SocketsHttpHandler ——
+    /// 有些 ROM / 网络栈会偷偷把响应缓冲起来，那样流式就废了（表现：整段一下子蹦出来）。
+    /// </summary>
+    private static HttpClient CreateHttpClient()
+    {
+        var timeout = TimeSpan.FromMinutes(5);
+        try
+        {
+            if (AppSettings.UseManagedHttpStack)
+                return new HttpClient(new System.Net.Http.SocketsHttpHandler
+                {
+                    AutomaticDecompression = System.Net.DecompressionMethods.All,
+                    ConnectTimeout = TimeSpan.FromSeconds(30)
+                })
+                { Timeout = timeout };
+        }
+        catch { }
+        return new HttpClient { Timeout = timeout };
+    }
+
+    /// <summary>
+    /// 补上 SSE 流式所需的请求头。
+    /// 显式声明接受事件流 —— 有些网关 / CDN 靠 Accept 决定"边收边发"还是"攒完再发"。
+    /// </summary>
+    private void ApplyStreamingHeaders()
+    {
+        try
+        {
+            var h = _httpClient.DefaultRequestHeaders;
+            if (!h.Accept.Any(a => string.Equals(a.MediaType, "text/event-stream", StringComparison.OrdinalIgnoreCase)))
+                h.Accept.ParseAdd("text/event-stream");
+            if (!h.Accept.Any(a => string.Equals(a.MediaType, "application/json", StringComparison.OrdinalIgnoreCase)))
+                h.Accept.ParseAdd("application/json");
+            if (h.CacheControl == null)
+                h.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true };
+        }
+        catch { }
+    }
     public ObservableCollection<ChatMsg> Messages { get; set; }
     private DateTime _pressTime;
     private ChatMsg? _pressedMsg;
@@ -380,6 +421,7 @@ InitializeComponent();
 
     private void ApplyApiKey()
     {
+        ApplyStreamingHeaders();
         _httpClient.DefaultRequestHeaders.Remove("Authorization");
         var key = AppSettings.ApiKey.Trim();
         if (!string.IsNullOrEmpty(key))
@@ -725,7 +767,8 @@ InitializeComponent();
         var reqBody = BuildChatBody(model, messages, stream: true);
         var json = JsonSerializer.Serialize(reqBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content, HttpCompletionOption.ResponseHeadersRead);
+        var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
+                var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
         resp.EnsureSuccessStatusCode();
 
         // 流式处理：实时显示，同时检测指令（{cmd:"..."} / {api:"..."} / {img:"..."} / {browse:"..."}）
@@ -763,7 +806,8 @@ InitializeComponent();
                 var continueReq = BuildChatBody(model, continueMessages, stream: true);
                 var continueJson = JsonSerializer.Serialize(continueReq);
                 var continueContent = new StringContent(continueJson, Encoding.UTF8, "application/json");
-                var continueResp = await _httpClient.PostAsync(AppSettings.ApiUrl, continueContent, HttpCompletionOption.ResponseHeadersRead);
+                var continueHttpReq = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = continueContent };
+                var continueResp = await _httpClient.SendAsync(continueHttpReq, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
                 continueResp.EnsureSuccessStatusCode();
                 await ConsumeSseAsync(continueResp, aiBubble);
             }
@@ -835,7 +879,8 @@ InitializeComponent();
         {
             var body = BuildChatBody(AppSettings.ResolveChatModel(AppSettings.ForceThinking), continueMessages, stream: true);
             var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content, HttpCompletionOption.ResponseHeadersRead);
+            var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
+                var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
             resp.EnsureSuccessStatusCode();
             await ConsumeSseAsync(resp, aiBubble);
         }
@@ -867,7 +912,35 @@ InitializeComponent();
             return;
         }
 
-        var (ok, msg, _) = await BrowserTool.DownloadAsync(url);
+        // 借终端那套三行状态显示下载进度，别再让用户对着空白等
+        aiBubble.HasTerminalHeader = true;
+        aiBubble.TerminalTitle = "🌐 浏览器 — 下载文件";
+        aiBubble.TerminalStep = "正在连接…";
+        aiBubble.TerminalOutput = url;
+
+        var prog = new Progress<(long Got, long Total, double Kbps)>(p =>
+        {
+            try
+            {
+                var got = BrowserTool.HumanSize(p.Got);
+                if (p.Total > 0)
+                {
+                    var pct = (int)Math.Min(100, p.Got * 100 / p.Total);
+                    aiBubble.TerminalStep = $"正在下载… {pct}%";
+                    aiBubble.TerminalOutput = $"{got} / {BrowserTool.HumanSize(p.Total)} · {p.Kbps:0} KB/s";
+                }
+                else
+                {
+                    aiBubble.TerminalStep = "正在下载…";
+                    aiBubble.TerminalOutput = $"{got} · {p.Kbps:0} KB/s";
+                }
+            }
+            catch { }
+        });
+
+        var (ok, msg, _) = await BrowserTool.DownloadAsync(url, prog);
+        aiBubble.TerminalStep = ok ? "完成" : "失败";
+        aiBubble.TerminalOutput = msg;
 
         var hint = ok
             ? $"【下载结果】{msg}\n\n请用一两句话告诉用户：文件已经下好了、放在哪个路径、下一步怎么打开或安装（apk 的话提示他去文件管理器点一下安装）。不要再输出 {{download:...}}。"
@@ -884,7 +957,8 @@ InitializeComponent();
         {
             var body = BuildChatBody(AppSettings.ResolveChatModel(AppSettings.ForceThinking), continueMessages, stream: true);
             var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content, HttpCompletionOption.ResponseHeadersRead);
+            var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
+                var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
             resp.EnsureSuccessStatusCode();
             await ConsumeSseAsync(resp, aiBubble);
         }
@@ -914,6 +988,7 @@ InitializeComponent();
     private async Task<SseConsumeResult> ConsumeSseAsync(HttpResponseMessage resp, ChatMsg aiBubble)
     {
         var result = new SseConsumeResult();
+        var swDiag = System.Diagnostics.Stopwatch.StartNew();   // 诊断：量首块延迟和总时长
         using var stream = await resp.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
         string? line;
@@ -935,6 +1010,8 @@ InitializeComponent();
                         if (!result.ThinkingStart.HasValue) result.ThinkingStart = DateTime.Now;
                         result.ThinkingEnd = DateTime.Now;
                         aiBubble.Thinking += delta.reasoning_content;
+                        if (result.FirstDeltaMs < 0) result.FirstDeltaMs = (int)swDiag.ElapsedMilliseconds;
+                        result.Chunks++;
                         aiBubble.IsThinkingActive = true;
                         result.ThinkingActive = true;
                         // 实时刷新用时（只算思考过程，正文不计入）
@@ -944,6 +1021,8 @@ InitializeComponent();
                     if (!string.IsNullOrEmpty(delta.content))
                     {
                         aiBubble.Content += delta.content;
+                        if (result.FirstDeltaMs < 0) result.FirstDeltaMs = (int)swDiag.ElapsedMilliseconds;
+                        result.Chunks++;
                         result.ContentStarted = true;
                         // 正文开始 = 思考过程结束：冻结用时（此后不再累加）
                         aiBubble.IsThinkingActive = false;
@@ -986,6 +1065,11 @@ InitializeComponent();
             FollowBottomIfNeeded();
         }
         result.ReadDone = true;
+        result.TotalMs = (int)swDiag.ElapsedMilliseconds;
+        // 摆出来给人看：首块延迟≈总时长 → 卡在网络/服务端；首块很快但界面不动 → 卡在渲染
+        AppSettings.LastStreamDiag =
+            $"首块 {result.FirstDeltaMs}ms · 共 {result.Chunks} 块 · 总 {result.TotalMs}ms"
+            + (result.Chunks <= 1 ? "（只收到一块 = 响应被整段缓冲了）" : "");
         aiBubble.IsThinkingActive = false;
         // 用时只算"首个思考字 → 最后一个思考字"；若思考后直接结束（无正文）也在此冻结
         if (result.ThinkingStart.HasValue && result.ThinkingEnd.HasValue)
@@ -1191,7 +1275,8 @@ InitializeComponent();
         var reqBody = BuildChatBody(model, messages, stream: true);
         var json = JsonSerializer.Serialize(reqBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content, HttpCompletionOption.ResponseHeadersRead);
+        var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
+                var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
         resp.EnsureSuccessStatusCode();
 
         using var stream = await resp.Content.ReadAsStreamAsync();
@@ -1590,7 +1675,8 @@ InitializeComponent();
         var reqBody = BuildChatBody(model, messages, stream: true);
         var json = JsonSerializer.Serialize(reqBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var resp = await _httpClient.PostAsync(AppSettings.ApiUrl, content, HttpCompletionOption.ResponseHeadersRead);
+        var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
+                var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
         resp.EnsureSuccessStatusCode();
 
         using var stream = await resp.Content.ReadAsStreamAsync();
@@ -2438,6 +2524,17 @@ public sealed class SseConsumeResult
 
     /// <summary>正文中出现 {web:"..."} 指令（真浏览器），已提前断流。</summary>
     public bool CancelledForWeb { get; set; }
+
+    // ── 流式诊断（排查"整段蹦出来"到底卡在谁身上）──
+
+    /// <summary>从发请求到收到第一块内容的毫秒数；-1 = 还没收到。</summary>
+    public int FirstDeltaMs { get; set; } = -1;
+
+    /// <summary>一共收到多少块内容。</summary>
+    public int Chunks { get; set; }
+
+    /// <summary>整个流收完用了多少毫秒。</summary>
+    public int TotalMs { get; set; }
 }
 public class ChoiceItem
 {

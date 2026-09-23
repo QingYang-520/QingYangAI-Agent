@@ -153,7 +153,9 @@ public static class BrowserTool
     ///
     /// 返回 (是否成功, 给人看的说明, 落盘的绝对路径)。绝不抛异常。
     /// </summary>
-    public static async Task<(bool Ok, string Message, string Path)> DownloadAsync(string rawUrl)
+    public static async Task<(bool Ok, string Message, string Path)> DownloadAsync(
+        string rawUrl,
+        IProgress<(long Got, long Total, double Kbps)>? progress = null)
     {
         if (string.IsNullOrWhiteSpace(rawUrl))
             return (false, "没给下载地址。", "");
@@ -185,6 +187,9 @@ public static class BrowserTool
             var full = UniquePath(Path.Combine(dir, GuessFileName(resp, url)));
 
             long written = 0;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            long lastReportMs = 0;
+
             await using (var src = await resp.Content.ReadAsStreamAsync())
             await using (var dst = File.Create(full))
             {
@@ -200,8 +205,18 @@ public static class BrowserTool
                         return (false, $"文件超过 {AppSettings.BrowserMaxDownloadMb} MB 上限，已中断并删掉半截文件。", "");
                     }
                     await dst.WriteAsync(buf.AsMemory(0, n));
+
+                    // 每 250ms 报一次进度，别把 UI 线程刷爆
+                    if (progress != null && sw.ElapsedMilliseconds - lastReportMs >= 250)
+                    {
+                        lastReportMs = sw.ElapsedMilliseconds;
+                        var kbps = sw.Elapsed.TotalSeconds > 0 ? written / 1024.0 / sw.Elapsed.TotalSeconds : 0;
+                        progress.Report((written, declared ?? -1, kbps));
+                    }
                 }
             }
+
+            progress?.Report((written, written, sw.Elapsed.TotalSeconds > 0 ? written / 1024.0 / sw.Elapsed.TotalSeconds : 0));
 
             AppSettings.AddBrowserHistory("下载 " + Path.GetFileName(full) + $"（{HumanSize(written)}）");
             var shown = StorageAccess.ToDisplay(full);
@@ -480,7 +495,8 @@ public static class BrowserTool
         return target;
     }
 
-    private static string HumanSize(long bytes)
+    /// <summary>把字节数变成人看的字符串（供 UI 显示进度用）。</summary>
+    public static string HumanSize(long bytes)
     {
         if (bytes < 1024) return bytes + " B";
         if (bytes < 1024 * 1024) return (bytes / 1024.0).ToString("0.0") + " KB";

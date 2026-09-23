@@ -517,6 +517,20 @@
 
                         <BoxView HeightRequest="1" Color="#2F2928"/>
 
+                        <Label Text="流式输出诊断" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                        <Label x:Name="lblStreamDiag" Text="（还没发过请求）" FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+                        <Label Text="发一条消息后回这儿看。首块延迟≈总时长 → 卡在网络/服务端；首块很快但界面不动 → 卡在渲染。"
+                               FontSize="11" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <HorizontalStackLayout Spacing="10">
+                            <Switch x:Name="swManagedHttp" Toggled="OnManagedHttpToggled"/>
+                            <Label x:Name="lblManagedHttpDesc" Text="流式兼容模式" TextColor="#9E8D8C" VerticalOptions="Center"/>
+                        </HorizontalStackLayout>
+                        <Label Text="开了就换用纯托管的 HTTP 栈（绕开手机原生网络栈）。有些 ROM 会把响应偷偷缓冲起来、导致回复整段蹦出来，开这个多半能好。改完要重启 App 才生效。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                        <BoxView HeightRequest="1" Color="#2F2928"/>
+
                         <Label x:Name="lblBrowserHistory" Text="浏览历史：0 条" FontSize="12" TextColor="#9E8D8C"/>
                         <Button x:Name="btnViewHistory" Text="查看浏览历史" BackgroundColor="#3A3333" TextColor="White" Clicked="OnViewHistoryClicked"/>
                         <Button x:Name="btnClearCookies" Text="清除 Cookie（退出所有登录）" BackgroundColor="#3A3333" TextColor="#F2B8B5" Clicked="OnClearCookiesClicked"/>

@@ -137,6 +137,27 @@ public static class AgentLoopService
                 // 模型没给动作也没宣告完成：不能直接收工（那会让 Agent 退化成普通问答），
                 // 先明确催它一次；连续催不动才用兜底收尾。
                 lastSaid = CleanReply(reply);
+
+                // 特判：它其实吐了指令，只是客户端不认识 —— 别当"空转"，
+                // 直接把不认识的那个标记回去问清楚（否则会静默空转到兜底收尾，
+                // 用户看到的就是"任务还没做完，但我没能继续推进"这种甩锅话）。
+                var unknown = FindUnknownMarker(reply);
+                if (unknown != null)
+                {
+                    run.AddStep("think", $"不认识的指令 {unknown}");
+                    messages.Add(new { role = "assistant", content = reply });
+                    messages.Add(new
+                    {
+                        role = "user",
+                        content = $"（系统提示）你刚才输出的 {{{unknown}:\"...\"}} 客户端不认识，**没有被执行**。\n"
+                                  + "客户端认识的动作只有这些："
+                                  + string.Join("、", ActionOrder.Select(m => "{" + m + ":\"...\"}"))
+                                  + "、{done:\"最终答复\"}。\n"
+                                  + "请立刻改用其中一条重新输出；任务确实完成了就输出 {done:\"给用户的最终答复\"}。"
+                    });
+                    continue;
+                }
+
                 idleRounds++;
                 run.AddStep("think", idleRounds == 1 ? "尚未给出动作，催促继续" : "仍未给出动作");
 
@@ -249,14 +270,42 @@ public static class AgentLoopService
             || content.TrimStart().StartsWith(userPrompt.Trim(), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// 动作指令的执行顺序表（同时是"哪些标记算合法动作"的白名单）。
+    /// ⚠️ 新增指令时**三处必须一起改**：
+    ///   ① 这里；② AgentActionExecutor.ExecuteOneAsync 的 switch；③ 提示词的能力清单 + 输出协议。
+    /// 少改任何一处，模型吐了指令也会被当成"空转"，两轮后直接兜底收尾 —— 表现就是
+    /// "任务还没做完，但我没能继续推进"。
+    /// </summary>
+    private static readonly string[] ActionOrder =
+    {
+        "todo", "plan", "ls", "read", "write", "append", "edit", "del",
+        "cmd", "api", "browse", "img", "download", "web"
+    };
+
+    /// <summary>这个标记是不是客户端认识的动作（done 单独处理，也算认识）。</summary>
+    private static bool IsKnownMarker(string name)
+        => name == "done" || Array.IndexOf(ActionOrder, name) >= 0;
+
+    /// <summary>找出回复里客户端**不认识**的指令标记（如 {foo:"bar"} 的 foo）；没有就返回 null。</summary>
+    private static string? FindUnknownMarker(string reply)
+    {
+        if (string.IsNullOrEmpty(reply)) return null;
+        foreach (System.Text.RegularExpressions.Match m in
+                 System.Text.RegularExpressions.Regex.Matches(reply, "\\{([A-Za-z_][A-Za-z0-9_]*):\""))
+        {
+            var name = m.Groups[1].Value;
+            if (!IsKnownMarker(name)) return name;
+        }
+        return null;
+    }
+
     /// <summary>从模型回复里按出现顺序抽出所有动作指令。</summary>
     private static List<(string marker, string value)> ExtractActions(string reply)
     {
         var found = new List<(int index, string marker, string value)>();
-        string[] order = { "todo", "plan", "ls", "read", "write", "append", "edit", "del",
-                           "cmd", "api", "browse", "img" };
 
-        foreach (var marker in order)
+        foreach (var marker in ActionOrder)
         {
             var token = $"{{{marker}:\"";
             int idx = 0;
@@ -353,9 +402,20 @@ public static class AgentLoopService
                     + string.Join(" / ", ApiRegistry.All.Select(a => a.Id)) + "。"
                     + "想知道用户此刻在干嘛、睡了没、忙不忙时用它。");
         if (AppSettings.BrowserPermission)
-            sb.AppendLine("【上网】{browse:\"网址或搜索词\"} ——抓取网页/搜索的正文内容。");
+            sb.AppendLine("【上网】{browse:\"网址或搜索词\"} ——抓取网页/搜索的正文内容（只回正文，"
+                        + "但结果末尾会附上【页面上的文件 / 下载链接】，能拿到 href）。");
         else
             sb.AppendLine("【上网】当前用户未授予浏览器权限，{browse:...} 会被直接拒绝，别浪费轮次去试。");
+        sb.AppendLine("【下载文件】{download:\"能直接下到文件的完整直链\"} ——客户端会真的把文件下到工作区。"
+                    + "用户让你「下载 / 装一个东西」时必须用它，别只把网址念给用户。"
+                    + "拿不到直链就先用 {browse:} 打开下载页，从返回的【页面上的文件 / 下载链接】里挑；"
+                    + "「别自己猜」地址（assets 常见命名之类）——猜错既下不到东西又白费一轮。");
+        sb.AppendLine("【真浏览器】{web:\"动作 参数\"} ——用真浏览器内核操作网页，"
+                    + "JS 渲染的页面（知乎/掘金/淘宝这类）、要点按钮、填表单、翻页都靠它。"
+                    + "动作：open <网址>、text、links、click <按钮文字或 CSS 选择器>、"
+                    + "type <选择器>|<要填的字>、scroll bottom、back、url。"
+                    + "判据：静态页只要一段文字用 {browse:}（快）；"
+                    + "{browse:} 读回来是空壳、或者要交互，就改用 {web:}。");
         sb.AppendLine("【生成图片】{img:\"描述\"} ——调用文生图模型，结果会直接显示在聊天里。");
 
         // ─────── ④ 输出协议（最关键的一段） ───────
@@ -374,7 +434,9 @@ public static class AgentLoopService
         sb.AppendLine("  {del:\"路径\"}                          删除文件");
         sb.AppendLine("  {cmd:\"单条命令\"}                    执行终端命令");
         sb.AppendLine("  {api:\"名\"}                           查感知 API");
-        sb.AppendLine("  {browse:\"网址或搜索词\"}              上网抓取");
+        sb.AppendLine("  {browse:\"网址或搜索词\"}              上网抓取（只回正文）");
+        sb.AppendLine("  {download:\"直链地址\"}                真的把文件下到工作区（下东西必用它）");
+        sb.AppendLine("  {web:\"动作 参数\"}                    用真浏览器操作网页（JS 页面/点击/填表）");
         sb.AppendLine("  {img:\"描述\"}                         生成图片");
         sb.AppendLine("  {done:\"给用户的最终答复\"}            任务完成，收尾");
         sb.AppendLine();

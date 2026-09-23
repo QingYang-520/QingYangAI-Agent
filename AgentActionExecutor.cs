@@ -43,6 +43,8 @@ public static class AgentActionExecutor
             case "api":    return await DoApiAsync(value, run);
             case "browse": return await DoBrowseAsync(value, run);
             case "img":    return await DoImageAsync(value, run);
+            case "download": return await DoDownloadAsync(value, run);
+            case "web":      return await DoWebAsync(value, run);
             case "todo":   return DoTodo(value, run);
             case "plan":   return DoTodo(value, run);
             case "done":   return new ActionResult { TaskDone = true, DoneMessage = value };
@@ -188,6 +190,35 @@ public static class AgentActionExecutor
         bool failed = string.IsNullOrWhiteSpace(text) || text.StartsWith("抓取失败") || text.StartsWith("无法");
         run.CompleteStep(failed: failed);
         return new ActionResult { DidAct = true, Observation = string.IsNullOrWhiteSpace(text) ? "网页抓取失败。" : text };
+    }
+
+    /// <summary>
+    /// {download:"直链"} —— 真的把文件下到工作区（走 BrowserTool.DownloadAsync）。
+    /// Agent 模式下不接进度回调（过程区已经有步骤行了）。
+    /// </summary>
+    private static async Task<ActionResult> DoDownloadAsync(string url, AgentRun run)
+    {
+        run.BeginStep("download", $"下载 {Shorten(url, 50)}");
+        var (ok, msg, _) = await BrowserTool.DownloadAsync(url);
+        run.CompleteStep(failed: !ok);
+        return new ActionResult { DidAct = true, Observation = msg };
+    }
+
+    /// <summary>
+    /// {web:"动作 参数"} —— 用藏在聊天页里的真浏览器操作网页（走 WebAgent）。
+    /// JS 渲染的页面、点按钮、填表单、翻页都靠它。
+    /// </summary>
+    private static async Task<ActionResult> DoWebAsync(string command, AgentRun run)
+    {
+        run.BeginStep("web", $"浏览器 {Shorten(command, 50)}");
+        var result = await WebAgent.RunAsync(command);
+        bool failed = string.IsNullOrWhiteSpace(result)
+                   || result.StartsWith("浏览器还没准备好")
+                   || result.StartsWith("浏览器操作失败")
+                   || result.StartsWith("不认识的浏览器动作")
+                   || result.StartsWith("AI 浏览器被关掉");
+        run.CompleteStep(failed: failed);
+        return new ActionResult { DidAct = true, Observation = string.IsNullOrWhiteSpace(result) ? "浏览器没返回内容。" : result };
     }
 
     private static async Task<ActionResult> DoImageAsync(string desc, AgentRun run)

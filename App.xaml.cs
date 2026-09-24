@@ -80,9 +80,8 @@ public partial class App : Application
 
     protected override Window CreateWindow(IActivationState? activationState)
     {
-        bool isAgreed = Preferences.Get("UserAgreePrivacy", false);
-
-        if (isAgreed)
+        // 协议版本对得上 → 直接放行（不打扰）
+        if (AppSettings.AgreementUpToDate)
         {
             // 引导没走完 → 先去快速开始（两步：接模型 → 选人设）
             bool quickStartDone = Preferences.Get("QuickStartDone", false);
@@ -91,10 +90,12 @@ public partial class App : Application
 
             return new Window(new NavigationPage(new ChatPage()));
         }
-        else
-        {
-            // 未同意协议：先进启动动画页，动画结束后由 IntroPage 跳转到协议页
-            return new Window(new NavigationPage(new IntroPage()));
-        }
+
+        // 老用户：以前同意过，但协议版本更新了 → 跳过启动动画，直接重弹协议页让 TA 重新确认
+        if (Preferences.Get("UserAgreePrivacy", false))
+            return new Window(new NavigationPage(new AgreementPage(AgreementMode.Consent)));
+
+        // 全新安装：先进启动动画页，动画结束后由 IntroPage 跳转到协议页
+        return new Window(new NavigationPage(new IntroPage()));
     }
 }

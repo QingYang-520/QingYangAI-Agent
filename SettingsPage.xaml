@@ -640,6 +640,23 @@
                 </Border>
             </VerticalStackLayout>
 
+            <!-- ══════════ 📄 关于与协议 ══════════ -->
+            <VerticalStackLayout Spacing="10">
+                <Label Text="📄 关于与协议" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+
+                <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
+                    <VerticalStackLayout Spacing="2">
+                        <VerticalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnAgreementTapped"/>
+                        </VerticalStackLayout.GestureRecognizers>
+                        <Label Text="用户协议与隐私政策 ›" FontSize="15" FontAttributes="Bold" TextColor="White"/>
+                        <Label x:Name="lblAgreementVersion" Text="" FontSize="12" TextColor="#9E8D8C"/>
+                        <Label Text="点进去随时可查全文（用户协议 / 隐私政策 / Agent 使用声明 / AI 浏览器规则 / 免责声明）。"
+                               FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+                    </VerticalStackLayout>
+                </Border>
+            </VerticalStackLayout>
+
             <!-- 保存 -->
             <Button x:Name="btnSave" Text="保存设置" BackgroundColor="#FBB5B2" Clicked="OnSaveClicked" CornerRadius="12"/>
             <Button x:Name="btnClearChat" Text="清空聊天数据" BackgroundColor="#B0413E" TextColor="White" Clicked="OnClearChatClicked" CornerRadius="12"/>

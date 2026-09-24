@@ -39,6 +39,7 @@ public partial class SettingsPage : ContentPage
             UpdateSuperAdminState();
             UpdateWorkspaceHint();   // 从系统设置回来后刷新工作区可见性/权限状态
             UpdateStreamDiagLabel(); // 聊天页刚发过消息，顺手把流式诊断刷新一下
+            UpdateAgreementVersionLabel();
             _ = UpdateMemoryCountAsync();
             _ = UpdateCompanionLabelAsync();
             // 每次打开设置页都检测连通状态；延迟到导航动画结束后异步执行，避免卡顿
@@ -742,6 +743,25 @@ public partial class SettingsPage : ContentPage
         AppSettings.ClearBrowserHistory();
         UpdateBrowserHistoryLabel();
         await DisplayAlert("已清空", "浏览历史清空了。", "好");
+    }
+
+    // ══════════════ 📄 关于与协议 ══════════════
+
+    private void UpdateAgreementVersionLabel() =>
+        lblAgreementVersion.Text = $"版本 v{AgreementContent.Version} · 生效日期 {AgreementContent.EffectiveDate}";
+
+    /// <summary>点进只读协议页（正文与首次启动那份完全一致，只是按钮变成「返回」）。</summary>
+    private async void OnAgreementTapped(object? sender, EventArgs e)
+    {
+        try
+        {
+            await Navigation.PushAsync(new AgreementPage(AgreementMode.ReadOnly));
+        }
+        catch (Exception ex)
+        {
+            // 正常不会走到这儿；万一没有 NavigationPage，给个人话而不是闪退
+            await DisplayAlert("打不开协议页", ex.Message, "好");
+        }
     }
 
     /// <summary>刷新「Agent 循环」说明文字。</summary>

@@ -473,6 +473,26 @@ public static class AppSettings
 
     public static void ClearBrowserHistory() => BrowserHistoryJson = "[]";
 
+    // ── 用户协议版本 ──
+
+    /// <summary>
+    /// 用户已同意的协议版本号（0 = 从没同意过）。
+    /// 与 <see cref="AgreementContent.Version"/> 比较，决定要不要重新弹协议页。
+    /// </summary>
+    public static int AgreedAgreementVersion
+    {
+        get => Preferences.Default.Get("AgreedAgreementVersion", 0);
+        set => Preferences.Default.Set("AgreedAgreementVersion", value);
+    }
+
+    /// <summary>
+    /// 是否已经同意过**当前版本**的协议。
+    /// false → 启动时该弹协议页（新用户没同意过，或老用户遇到过协议更新）。
+    /// </summary>
+    public static bool AgreementUpToDate =>
+        Preferences.Default.Get("UserAgreePrivacy", false)
+        && AgreedAgreementVersion >= AgreementContent.Version;
+
     // ── 流式诊断（排查"为什么不是逐块上屏"用）──
 
     /// <summary>上次流式请求的诊断：首块延迟 / 块数 / 总时长。</summary>

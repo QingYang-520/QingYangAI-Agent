@@ -474,7 +474,23 @@ public partial class SettingsPage : ContentPage
         => ScheduleCheck(entApiUrl, entApiKey, stChatStatus);
 
     private void OnImgUrlTextChanged(object? sender, TextChangedEventArgs e)
-        => ScheduleCheck(entImgApiUrl, entImgApiKey, stImgStatus);
+    {
+        ImageGenService.Forget();   // 换了地址，后端类型得重新探测
+        ScheduleCheck(entImgApiUrl, entImgApiKey, stImgStatus);
+    }
+
+    /// <summary>生图后端选择：auto / openai / comfy / sd。</summary>
+    private void OnImgBackendChanged(object? sender, EventArgs e)
+    {
+        AppSettings.ImgBackend = picImgBackend.SelectedIndex switch
+        {
+            1 => "openai",
+            2 => "comfy",
+            3 => "sd",
+            _ => "auto"
+        };
+        ImageGenService.Forget();   // 换了后端，下次重新探测
+    }
     private void OnImgKeyTextChanged(object? sender, TextChangedEventArgs e)
         => ScheduleCheck(entImgApiUrl, entImgApiKey, stImgStatus);
 
@@ -567,6 +583,16 @@ public partial class SettingsPage : ContentPage
         entImgApiUrl.Text = AppSettings.ImgApiUrl;
         entImgApiKey.Text = AppSettings.ImgApiKey;
         FillModelPicker(picImgModel, AppSettings.ImgModel);
+        // 生图后端：决定能不能实时预览中间图
+        picImgBackend.ItemsSource = new List<string> { "自动探测", "OpenAI 兼容", "ComfyUI", "SD-WebUI" };
+        picImgBackend.SelectedIndex = AppSettings.ImgBackend switch
+        {
+            "openai" => 1,
+            "comfy" => 2,
+            "sd" => 3,
+            _ => 0
+        };
+        entComfyWorkflow.Text = AppSettings.ComfyWorkflow;
         entAudioApiUrl.Text = AppSettings.AudioApiUrl;
         entAudioApiKey.Text = AppSettings.AudioApiKey;
         FillModelPicker(picAudioModel, AppSettings.AudioModel);
@@ -1552,6 +1578,7 @@ public partial class SettingsPage : ContentPage
         AppSettings.ImgApiUrl = entImgApiUrl.Text ?? "";
         AppSettings.ImgApiKey = entImgApiKey.Text?.Trim() ?? "";
         AppSettings.ImgModel = picImgModel.SelectedItem as string ?? "";
+        AppSettings.ComfyWorkflow = entComfyWorkflow.Text?.Trim() ?? "";
         AppSettings.AudioApiUrl = entAudioApiUrl.Text ?? "";
         AppSettings.AudioApiKey = entAudioApiKey.Text?.Trim() ?? "";
         AppSettings.AudioModel = picAudioModel.SelectedItem as string ?? "";

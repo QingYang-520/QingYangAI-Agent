@@ -145,6 +145,16 @@
                                 <Button Grid.Column="1" x:Name="btnFetchImgModels" Text="获取模型列表" BackgroundColor="#3A3333" TextColor="White" Clicked="OnFetchImgModelsClicked"/>
                             </Grid>
                             <Picker x:Name="picImgModel" Title="选择模型" BackgroundColor="#2F2928" TextColor="White"/>
+
+                            <Label Text="生图后端" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Picker x:Name="picImgBackend" Title="选择后端" BackgroundColor="#2F2928" TextColor="White"
+                                    SelectedIndexChanged="OnImgBackendChanged"/>
+                            <Label Text="决定能不能实时预览中间图：SD-WebUI 能出百分比+预览、ComfyUI 能出预览、OpenAI 兼容看服务商是否支持 partial_images。选「自动」会自己探测。"
+                                   FontSize="11" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+
+                            <Label Text="ComfyUI 工作流（可选）" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Entry x:Name="entComfyWorkflow" Placeholder="留空 = 用内置 SD1.5 工作流；里面写 %PROMPT% 当占位符"
+                                   PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
                         </VerticalStackLayout>
                     </VerticalStackLayout>
                 </Border>

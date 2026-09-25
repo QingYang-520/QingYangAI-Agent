@@ -1996,10 +1996,32 @@ InitializeComponent();
     private async Task<(bool ok, string obs)> GenerateImageForBubbleAsync(string desc, ChatMsg bubble)
     {
         bubble.ImageState = "loading";
+        bubble.ImageProgressNote = "";              // 后端没返回进度就不显示这一行
+        bubble.ImagePreviewUnsupported = false;
+        bubble.PreviewBase64 = "";
         ScrollToBottom();
         FollowBottomIfNeeded();
 
-        var r = await ImageGenService.GenerateAsync(desc);
+        // 后端每推一帧就刷到气泡上。
+        // Progress<T> 会把回调派回创建它的线程（这里是 UI 线程），所以直接改属性是安全的。
+        var prog = new Progress<ImageGenService.ImageProgress>(p =>
+        {
+            try
+            {
+                if (p.Unsupported)
+                {
+                    // 后端明确不支持实时预览 → 图框里显示小字
+                    bubble.ImagePreviewUnsupported = true;
+                    bubble.ImageProgressNote = "";
+                    return;
+                }
+                if (!string.IsNullOrEmpty(p.Note)) bubble.ImageProgressNote = p.Note;
+                if (p.Preview is { Length: > 0 }) bubble.PreviewBase64 = Convert.ToBase64String(p.Preview);
+            }
+            catch { }
+        });
+
+        var r = await ImageGenService.GenerateAsync(desc, prog);
 
         if (r.Ok && r.Bytes != null)
         {
@@ -2010,6 +2032,8 @@ InitializeComponent();
                 bubble.ImageUrl = path;
                 if (!string.IsNullOrWhiteSpace(r.B64)) bubble.ImageBase64 = r.B64;
                 bubble.ImageState = "done";
+                bubble.PreviewBase64 = "";          // 成品图出来就把中间预览撤掉
+                bubble.ImageProgressNote = "";
                 ScrollToBottom();
                 _ = ChatStore.Instance.SaveMessageAsync(bubble);
                 return (true,
@@ -2154,6 +2178,10 @@ public class ChatMsg : INotifyPropertyChanged
     private string _imageBase64 = "";     // 生成的图片数据
     private string _imageUrl = "";        // 用户发送的图片来源（本地路径）
     private string _imageState = "";      // "" 无图 / "loading" 预加载 / "done" 完成 / "error" 失败
+    private string _imageProgressNote = "";      // 生成进度那行字（后端没给就是空）
+    private bool _imagePreviewUnsupported;       // 后端明确不给实时预览
+    private string _previewBase64 = "";          // 中间预览帧
+    private ImageSource? _previewSourceCache;    // 预览帧解出来的显示源（缓存）
     private string _voicePath = "";       // 语音消息音频文件路径
 
     /// <summary>数据库主键（0 表示尚未入库）。</summary>
@@ -2252,6 +2280,8 @@ public class ChatMsg : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsImageLoading)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsImageError)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowImageFrame)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowImageProgress)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowNoPreviewHint)));
         }
     }
 
@@ -2293,6 +2323,85 @@ public class ChatMsg : INotifyPropertyChanged
     /// </summary>
     [JsonIgnore]
     public bool ShowImageFrame => IsImageLoading || IsImageError || IsImageDone;
+
+    // ───────────── 生图实时进度 / 中间预览 ─────────────
+
+    /// <summary>
+    /// 转圈下面那行字（"正在生成… 45%" / "采样 12/30"）。
+    /// **后端没返回进度就是空字符串 → 界面不显示这一行**。
+    /// </summary>
+    public string ImageProgressNote
+    {
+        get => _imageProgressNote;
+        set
+        {
+            if (_imageProgressNote == value) return;
+            _imageProgressNote = value ?? "";
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ImageProgressNote)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowImageProgress)));
+        }
+    }
+
+    /// <summary>是否显示进度行（正在生成 且 后端给了进度）。</summary>
+    [JsonIgnore]
+    public bool ShowImageProgress => IsImageLoading && !string.IsNullOrEmpty(_imageProgressNote);
+
+    /// <summary>后端**明确**不支持实时预览时置 true → 图框里显示小字提示。</summary>
+    public bool ImagePreviewUnsupported
+    {
+        get => _imagePreviewUnsupported;
+        set
+        {
+            if (_imagePreviewUnsupported == value) return;
+            _imagePreviewUnsupported = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ImagePreviewUnsupported)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowNoPreviewHint)));
+        }
+    }
+
+    /// <summary>是否显示「当前模型不支持实时预览」小字（生成中 且 后端不给预览）。</summary>
+    [JsonIgnore]
+    public bool ShowNoPreviewHint => IsImageLoading && _imagePreviewUnsupported;
+
+    /// <summary>
+    /// 中间预览帧（base64）。支持实时预览的后端（OpenAI partial_images / ComfyUI / SD-WebUI）
+    /// 会在生成过程中不停往这儿塞新的帧。
+    /// </summary>
+    public string PreviewBase64
+    {
+        get => _previewBase64;
+        set
+        {
+            if (_previewBase64 == value) return;
+            _previewBase64 = value ?? "";
+            _previewSourceCache = null;   // 帧变了，缓存作废
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviewBase64)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasPreview)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PreviewSource)));
+        }
+    }
+
+    /// <summary>有没有中间预览帧可显示。</summary>
+    [JsonIgnore]
+    public bool HasPreview => !string.IsNullOrEmpty(_previewBase64);
+
+    /// <summary>中间预览帧的显示源（base64 解出来，带缓存，别每帧重复解）。</summary>
+    [JsonIgnore]
+    public ImageSource? PreviewSource
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(_previewBase64)) return null;
+            if (_previewSourceCache != null) return _previewSourceCache;
+            try
+            {
+                var bytes = Convert.FromBase64String(_previewBase64);
+                _previewSourceCache = ImageSource.FromStream(() => new MemoryStream(bytes));
+            }
+            catch { return null; }
+            return _previewSourceCache;
+        }
+    }
 
     /// <summary>是否有语音消息。</summary>
     [JsonIgnore]

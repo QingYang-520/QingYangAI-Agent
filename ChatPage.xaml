@@ -176,20 +176,49 @@
                                             <TapGestureRecognizer Tapped="OnImageFrameTapped"/>
                                         </Border.GestureRecognizers>
                                         <Grid HeightRequest="200">
-                                            <!-- 预加载 -->
-                                            <ActivityIndicator IsVisible="{Binding IsImageLoading}"
-                                                               IsRunning="{Binding IsImageLoading}"
-                                                               Color="#FBB5B2"
-                                                               HorizontalOptions="Center"
-                                                               VerticalOptions="Center"/>
-                                            <!-- 失败 -->
+                                            <!-- ① 中间预览帧：只有支持实时预览的后端才会往这儿塞
+                                                   （ComfyUI websocket / SD-WebUI 轮询 / OpenAI partial_images） -->
+                                            <Image Source="{Binding PreviewSource}"
+                                                   Aspect="AspectFit"
+                                                   IsVisible="{Binding HasPreview}"
+                                                   HorizontalOptions="Fill"
+                                                   VerticalOptions="Fill"/>
+
+                                            <!-- ② 生成中浮层：转圈 + 进度行（后端没返回进度就只显示转圈） -->
+                                            <Border IsVisible="{Binding IsImageLoading}"
+                                                    BackgroundColor="#B3000000"
+                                                    StrokeThickness="0"
+                                                    StrokeShape="RoundRectangle 12"
+                                                    Padding="14,10"
+                                                    HorizontalOptions="Center"
+                                                    VerticalOptions="Center">
+                                                <VerticalStackLayout Spacing="7">
+                                                    <ActivityIndicator IsRunning="{Binding IsImageLoading}"
+                                                                       Color="#FBB5B2"
+                                                                       HorizontalOptions="Center"/>
+                                                    <!-- 进度：后端返回了才有这一行 -->
+                                                    <Label Text="{Binding ImageProgressNote}"
+                                                           IsVisible="{Binding ShowImageProgress}"
+                                                           TextColor="#FBB5B2"
+                                                           FontSize="13"
+                                                           HorizontalOptions="Center"/>
+                                                    <!-- 后端明确不给预览时的小字提示 -->
+                                                    <Label Text="当前模型不支持实时预览"
+                                                           IsVisible="{Binding ShowNoPreviewHint}"
+                                                           TextColor="#9E8D8C"
+                                                           FontSize="11"
+                                                           HorizontalOptions="Center"/>
+                                                </VerticalStackLayout>
+                                            </Border>
+
+                                            <!-- ③ 失败 -->
                                             <Label Text="图片生成失败"
                                                    TextColor="#F2B8B5"
                                                    FontSize="13"
                                                    IsVisible="{Binding IsImageError}"
                                                    HorizontalOptions="Center"
                                                    VerticalOptions="Center"/>
-                                            <!-- 完成后的图片 -->
+                                            <!-- ④ 完成后的成品图 -->
                                             <Image Source="{Binding ImageSource}"
                                                    Aspect="AspectFit"
                                                    IsVisible="{Binding IsImageDone}"

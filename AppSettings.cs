@@ -246,6 +246,19 @@ public static class AppSettings
     public static string ImgModel { get => GetField(ActiveModelConfig, "ImgModel"); set => SetField(ActiveModelConfig, "ImgModel", value); }
     public static bool ImgEnabled => !string.IsNullOrWhiteSpace(ImgApiUrl) && !string.IsNullOrWhiteSpace(ImgApiKey);
 
+    /// <summary>
+    /// 生图后端类型：`auto`（默认，自动探测）/ `openai`（OpenAI 兼容 + Responses partial_images）
+    /// / `comfy`（ComfyUI）/ `sd`（SD-WebUI / Forge）。
+    /// 只有支持实时预览的后端才能往聊天图框里推中间帧。
+    /// </summary>
+    public static string ImgBackend { get => GetField(ActiveModelConfig, "ImgBackend", "auto"); set => SetField(ActiveModelConfig, "ImgBackend", value); }
+
+    /// <summary>
+    /// ComfyUI 工作流（API 格式 JSON）。留空就用内置默认 SD1.5 工作流。
+    /// 里面有 `%PROMPT%` 占位符会被替换成用户的描述。
+    /// </summary>
+    public static string ComfyWorkflow { get => GetField(ActiveModelConfig, "ComfyWorkflow"); set => SetField(ActiveModelConfig, "ComfyWorkflow", value); }
+
     /// <summary>听觉模型：语音转文字（自动识别语音消息）。</summary>
     public static string AudioApiUrl { get => GetField(ActiveModelConfig, "AudioApiUrl"); set => SetField(ActiveModelConfig, "AudioApiUrl", value); }
     public static string AudioApiKey { get => GetField(ActiveModelConfig, "AudioApiKey"); set => SetField(ActiveModelConfig, "AudioApiKey", value); }

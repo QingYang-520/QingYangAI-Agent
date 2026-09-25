@@ -144,8 +144,10 @@
                                         </VerticalStackLayout>
                                     </Border>
 
-                                    <!-- 正文（普通文本，无流光） -->
-                                    <Label Text="{Binding Content}"
+                                    <!-- 正文（普通文本，无流光）。
+                                         绑 DisplayContent 而不是 Content —— 打字机靠它逐字上屏；
+                                         Content 始终是完整文本（存库/给模型/朗读都用它）。 -->
+                                    <Label Text="{Binding DisplayContent}"
                                            TextColor="White"
                                            FontSize="16"
                                            LineBreakMode="WordWrap"/>

@@ -177,6 +177,71 @@ InitializeComponent();
         if (_followBottom) ScrollToBottom();
     }
 
+    // ══════════════ 打字机（显示侧逐字上屏）══════════════
+    //
+    // 网络侧现在是全速收流（块来得很快），显示侧以前是"块到就整块刷"，
+    // 看起来就是一次蹦出一大串。这里加一层显示缓冲：Content 照常全速累积（存库/给模型都用它），
+    // 界面绑的 DisplayContent 由计时器逐字揭开。
+
+    private ChatMsg? _typingBubble;
+    private IDispatcherTimer? _typeTimer;
+    private int _typeTicks;
+    private bool _streamDone;
+
+    /// <summary>开始给这个气泡打字。</summary>
+    private void BeginTyping(ChatMsg bubble)
+    {
+        try
+        {
+            // 上一个还没打完就直接放全 —— 别让它永远卡在半截
+            _typingBubble?.FlushReveal();
+            _typingBubble = bubble;
+            _typeTicks = 0;
+            _streamDone = false;
+            bubble.BeginReveal();
+            _typeTimer ??= CreateTypeTimer();
+            if (!_typeTimer.IsRunning) _typeTimer.Start();
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// 流收完了。**注意：这里不"一次全放出来"** —— 那样末尾会跳一下。
+    /// 只是标记一下，让计时器用更猛的步长把剩下的字排空，尾巴依然是逐字出的。
+    /// </summary>
+    private void EndTyping()
+    {
+        _streamDone = true;
+    }
+
+    private IDispatcherTimer CreateTypeTimer()
+    {
+        var t = Dispatcher.CreateTimer();
+        t.Interval = TimeSpan.FromMilliseconds(25);   // 40 帧/秒
+        t.Tick += (_, _) =>
+        {
+            try
+            {
+                var b = _typingBubble;
+                if (b == null) { _typeTimer?.Stop(); return; }
+
+                if (!b.RevealTick(_streamDone))
+                {
+                    // 追平了：交回给 Content 直接驱动，计时器停掉省电
+                    b.FlushReveal();
+                    _typingBubble = null;
+                    _streamDone = false;
+                    _typeTimer?.Stop();
+                }
+
+                // 滚动别每帧都做 —— 40 次/秒的重排会卡
+                if (++_typeTicks % 4 == 0) FollowBottomIfNeeded();
+            }
+            catch { }
+        };
+        return t;
+    }
+
     /// <summary>首次加载（异步，不阻塞构造）。</summary>
     private async Task InitAsync()
     {
@@ -1000,6 +1065,7 @@ InitializeComponent();
     {
         var result = new SseConsumeResult();
         var swDiag = System.Diagnostics.Stopwatch.StartNew();   // 诊断：量首块延迟和总时长
+        BeginTyping(aiBubble);   // 显示侧打字机：正文由计时器逐字揭开，不再是整块蹦
         using var stream = await resp.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
 
@@ -1134,6 +1200,8 @@ InitializeComponent();
         // 用时只算"首个思考字 → 最后一个思考字"；若思考后直接结束（无正文）也在此冻结
         if (result.ThinkingStart.HasValue && result.ThinkingEnd.HasValue)
             aiBubble.ThinkingSeconds = (result.ThinkingEnd.Value - result.ThinkingStart.Value).TotalSeconds;
+
+        EndTyping();   // 流收完了：剩下的字一次放出来，别让用户盯着半句话等
         return result;
     }
 
@@ -2598,6 +2666,9 @@ public class ChatMsg : INotifyPropertyChanged
             if (_content == value) return;
             _content = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Content)));
+            // 没在打字的时候，界面直接跟 Content 走（打字机跑着时由计时器驱动 DisplayContent）
+            if (_revealed < 0)
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayContent)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasContent)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowThinkingDivider)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ContentStarted)));
@@ -2608,6 +2679,65 @@ public class ChatMsg : INotifyPropertyChanged
     /// <summary>是否有正文内容（控制朗读按钮显隐）。</summary>
     [JsonIgnore]
     public bool HasContent => !string.IsNullOrEmpty(_content);
+
+    // ───────────── 打字机（显示侧逐字上屏）─────────────
+
+    /// <summary>已揭开的字数；-1 = 没启用打字机（直接显示全文）。</summary>
+    private int _revealed = -1;
+
+    /// <summary>
+    /// 界面上**实际显示**的正文。
+    ///
+    /// 打字机跑着的时候只显示前 `_revealed` 个字；没跑就等于 <see cref="Content"/>。
+    /// 气泡正文绑的是**这个**而不是 Content —— Content 永远是完整文本
+    /// （存库、给模型看、朗读都用它，不能因为显示慢就丢字）。
+    /// </summary>
+    [JsonIgnore]
+    public string DisplayContent =>
+        _revealed < 0 || _revealed >= _content.Length ? _content : _content[.._revealed];
+
+    /// <summary>打字机是否还在跑。</summary>
+    [JsonIgnore]
+    public bool IsRevealing => _revealed >= 0 && _revealed < _content.Length;
+
+    /// <summary>开始打字机：从 0 字开始逐字揭开。</summary>
+    public void BeginReveal()
+    {
+        _revealed = 0;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayContent)));
+    }
+
+    /// <summary>
+    /// 推进一帧。返回 true = 还在打（没追平）。
+    ///
+    /// **落后越多补得越快** —— 否则长回复生成完还要再"打"十几秒，用户会以为卡住了。
+    /// <paramref name="fast"/> = 流已经收完了（内容不会再增长），用更猛的步长把尾巴排空，
+    /// 但**仍然是逐字出**，不会一下子全蹦出来。
+    /// </summary>
+    public bool RevealTick(bool fast = false)
+    {
+        if (_revealed < 0) return false;
+
+        int full = _content.Length;
+        if (_revealed >= full) return false;
+
+        int backlog = full - _revealed;
+        int step = fast
+            ? Math.Clamp(backlog / 2 + 1, 2, 40)    // 收尾：最多 1600 字/秒
+            : Math.Clamp(backlog / 6 + 1, 1, 16);   // 生成中：1~16 字/帧（40~640 字/秒）
+        _revealed = Math.Min(full, _revealed + step);
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayContent)));
+        return _revealed < full;
+    }
+
+    /// <summary>把剩下的字一次全放出来（流结束 / 出错 / 换气泡时调，保证一个字都不丢）。</summary>
+    public void FlushReveal()
+    {
+        if (_revealed < 0) return;
+        _revealed = -1;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayContent)));
+    }
 
     public bool IsUser
     {

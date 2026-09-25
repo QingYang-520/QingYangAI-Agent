@@ -155,6 +155,14 @@
                             <Label Text="ComfyUI 工作流（可选）" FontSize="13" FontAttributes="Bold" TextColor="White"/>
                             <Entry x:Name="entComfyWorkflow" Placeholder="留空 = 用内置 SD1.5 工作流；里面写 %PROMPT% 当占位符"
                                    PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
+
+                            <Label Text="关闭水印" FontSize="13" FontAttributes="Bold" TextColor="White"/>
+                            <Picker x:Name="picWatermark" Title="选择关水印方式" BackgroundColor="#2F2928" TextColor="White"
+                                    SelectedIndexChanged="OnWatermarkChanged"/>
+                            <Label Text="各家服务商这个开关的字段名不一样（watermark / watermark_enabled / add_watermark…），挑一个能用的；都不行就用「自定义」自己填一段 JSON。默认不处理。"
+                                   FontSize="11" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+                            <Entry x:Name="entWatermarkCustom" Placeholder="自定义 JSON，如 {&quot;watermark&quot;:false}"
+                                   PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
                         </VerticalStackLayout>
                     </VerticalStackLayout>
                 </Border>

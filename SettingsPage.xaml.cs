@@ -479,6 +479,14 @@ public partial class SettingsPage : ContentPage
         ScheduleCheck(entImgApiUrl, entImgApiKey, stImgStatus);
     }
 
+    /// <summary>关水印方式选择：存的是 Id（空串 = 不处理）。</summary>
+    private void OnWatermarkChanged(object? sender, EventArgs e)
+    {
+        int i = picWatermark.SelectedIndex;
+        if (i < 0 || i >= AppSettings.WatermarkModes.Length) return;
+        AppSettings.ImgWatermarkMode = AppSettings.WatermarkModes[i].Id;
+    }
+
     /// <summary>生图后端选择：auto / openai / comfy / sd。</summary>
     private void OnImgBackendChanged(object? sender, EventArgs e)
     {
@@ -593,6 +601,11 @@ public partial class SettingsPage : ContentPage
             _ => 0
         };
         entComfyWorkflow.Text = AppSettings.ComfyWorkflow;
+        // 关水印：各家字段名不一样，做成可选集合 + 自定义
+        picWatermark.ItemsSource = AppSettings.WatermarkModes.Select(m => m.Label).ToList();
+        picWatermark.SelectedIndex = Math.Max(0,
+            Array.FindIndex(AppSettings.WatermarkModes, m => m.Id == AppSettings.ImgWatermarkMode));
+        entWatermarkCustom.Text = AppSettings.ImgWatermarkCustom;
         entAudioApiUrl.Text = AppSettings.AudioApiUrl;
         entAudioApiKey.Text = AppSettings.AudioApiKey;
         FillModelPicker(picAudioModel, AppSettings.AudioModel);
@@ -1579,6 +1592,7 @@ public partial class SettingsPage : ContentPage
         AppSettings.ImgApiKey = entImgApiKey.Text?.Trim() ?? "";
         AppSettings.ImgModel = picImgModel.SelectedItem as string ?? "";
         AppSettings.ComfyWorkflow = entComfyWorkflow.Text?.Trim() ?? "";
+        AppSettings.ImgWatermarkCustom = entWatermarkCustom.Text?.Trim() ?? "";
         AppSettings.AudioApiUrl = entAudioApiUrl.Text ?? "";
         AppSettings.AudioApiKey = entAudioApiKey.Text?.Trim() ?? "";
         AppSettings.AudioModel = picAudioModel.SelectedItem as string ?? "";

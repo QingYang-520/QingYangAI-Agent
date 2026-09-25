@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace 青阳AI;
 
@@ -607,13 +608,22 @@ public static class ImageGenService
             r.Attempts = attempt;
             try
             {
-                object body = attempt == 1
-                    ? new { model, prompt, response_format = "b64_json", size = "1024x1024" }
-                    : new { model, prompt };
+                // 用 JsonObject 而不是匿名类型 —— 这样"关水印"字段才能灵活并进去
+                var node = new JsonObject
+                {
+                    ["model"] = model,
+                    ["prompt"] = prompt
+                };
+                if (attempt == 1)
+                {
+                    node["response_format"] = "b64_json";
+                    node["size"] = "1024x1024";
+                }
+                ApplyWatermarkSetting(node);
 
                 using var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ImgApiUrl);
                 req.Headers.Add("Authorization", $"Bearer {AppSettings.ImgApiKey}");
-                req.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                req.Content = new StringContent(node.ToJsonString(), Encoding.UTF8, "application/json");
 
                 using var resp = await _http.SendAsync(req, ct);
                 if (!resp.IsSuccessStatusCode)
@@ -686,6 +696,39 @@ public static class ImageGenService
         }
         catch { }
         return null;
+    }
+
+    /// <summary>
+    /// 按设置往请求体里并"关水印"字段。
+    ///
+    /// 各家服务商这个开关的字段名不统一（watermark / watermark_enabled / add_watermark / …），
+    /// 所以做成**可选集合 + 自定义**：用户在设置里挑一个能用的，或者直接填一段 JSON。
+    /// 默认（空）**什么都不发**，和以前的行为完全一致。
+    /// </summary>
+    private static void ApplyWatermarkSetting(JsonObject body)
+    {
+        switch ((AppSettings.ImgWatermarkMode ?? "").Trim())
+        {
+            case "":                        return;   // 默认：不处理
+            case "watermark_false":         body["watermark"] = false; return;
+            case "watermark_enabled_false": body["watermark_enabled"] = false; return;
+            case "add_watermark_false":     body["add_watermark"] = false; return;
+            case "disable_watermark_true":  body["disable_watermark"] = true; return;
+            case "no_watermark_true":       body["no_watermark"] = true; return;
+            case "watermark_0":             body["watermark"] = 0; return;
+
+            case "custom":
+                var raw = (AppSettings.ImgWatermarkCustom ?? "").Trim();
+                if (raw.Length == 0) return;
+                try
+                {
+                    if (JsonNode.Parse(raw) is JsonObject extra)
+                        foreach (var kv in extra)
+                            body[kv.Key] = kv.Value?.DeepClone();
+                }
+                catch { /* 用户填的 JSON 不合法，就当没填 */ }
+                return;
+        }
     }
 
     /// <summary>把 HTTP 状态码翻成人话。</summary>

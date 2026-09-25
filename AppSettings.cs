@@ -259,6 +259,31 @@ public static class AppSettings
     /// </summary>
     public static string ComfyWorkflow { get => GetField(ActiveModelConfig, "ComfyWorkflow"); set => SetField(ActiveModelConfig, "ComfyWorkflow", value); }
 
+    /// <summary>
+    /// 关水印方式。空 = 不处理（默认）；否则见 <see cref="WatermarkModes"/>。
+    /// 各家服务商"关水印"的字段名五花八门，所以做成可选的集合 + 自定义。
+    /// </summary>
+    public static string ImgWatermarkMode { get => GetField(ActiveModelConfig, "ImgWatermarkMode"); set => SetField(ActiveModelConfig, "ImgWatermarkMode", value); }
+
+    /// <summary>自定义关水印字段（一段 JSON，如 {"watermark":false}），只在 mode = custom 时生效。</summary>
+    public static string ImgWatermarkCustom { get => GetField(ActiveModelConfig, "ImgWatermarkCustom"); set => SetField(ActiveModelConfig, "ImgWatermarkCustom", value); }
+
+    /// <summary>
+    /// 关水印的常见约定集合（下拉框用）。Id 空串 = 不处理。
+    /// 这些是社区里见得多几种写法，用户挑一个能用的就行。
+    /// </summary>
+    public static readonly (string Id, string Label)[] WatermarkModes =
+    {
+        ("",                         "不处理（默认，不发这个字段）"),
+        ("watermark_false",          "watermark: false"),
+        ("watermark_enabled_false",  "watermark_enabled: false"),
+        ("add_watermark_false",      "add_watermark: false"),
+        ("disable_watermark_true",   "disable_watermark: true"),
+        ("no_watermark_true",        "no_watermark: true"),
+        ("watermark_0",              "watermark: 0"),
+        ("custom",                   "自定义（下面自己填一段 JSON）"),
+    };
+
     /// <summary>听觉模型：语音转文字（自动识别语音消息）。</summary>
     public static string AudioApiUrl { get => GetField(ActiveModelConfig, "AudioApiUrl"); set => SetField(ActiveModelConfig, "AudioApiUrl", value); }
     public static string AudioApiKey { get => GetField(ActiveModelConfig, "AudioApiKey"); set => SetField(ActiveModelConfig, "AudioApiKey", value); }

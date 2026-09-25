@@ -109,8 +109,9 @@
 
                                     <!-- 等待回应指示器：还没收到任何内容时显示（思考过程或正文，任一到达即隐藏） -->
                                     <HorizontalStackLayout IsVisible="{Binding IsWaiting}" Spacing="8" Margin="0,2,0,2">
-                                        <ActivityIndicator IsRunning="True" Color="#FBB5B2"
-                                                           HeightRequest="18" WidthRequest="18" VerticalOptions="Center"/>
+                                        <!-- 点阵加载动画（原来是 ActivityIndicator 转圈） -->
+                                        <local:DotMotionLoader WidthRequest="22" HeightRequest="22"
+                                                               VerticalOptions="Center"/>
                                         <Label Text="等待服务器响应…" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
                                     </HorizontalStackLayout>
 

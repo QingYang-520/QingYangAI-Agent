@@ -20,47 +20,19 @@ public static class AvatarService
         catch { return null; }
     }
 
-    /// <summary>生成并保存头像。返回是否成功。</summary>
+    /// <summary>生成并保存头像。返回是否成功（失败静默，保持旧头像）。</summary>
     public static async Task<bool> GenerateAsync(string desc)
     {
         try
         {
             if (!AppSettings.ImgEnabled || string.IsNullOrWhiteSpace(desc)) return false;
 
-            var reqBody = new
-            {
-                model = string.IsNullOrWhiteSpace(AppSettings.ImgModel) ? "gpt-image-1" : AppSettings.ImgModel,
-                prompt = $"为一位 AI 陪伴助手画一张头像：{desc}。要求温暖、简洁、适合做圆形头像，纯色或柔和背景。",
-                response_format = "b64_json",
-                size = "1024x1024"
-            };
+            // 走统一的生图服务：白拿"失败重试一次"和错误翻人话
+            var r = await ImageGenService.GenerateAsync(
+                $"为一位 AI 陪伴助手画一张头像：{desc}。要求温暖、简洁、适合做圆形头像，纯色或柔和背景。");
+            if (!r.Ok || r.Bytes == null) return false;
 
-            using var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ImgApiUrl);
-            req.Headers.Add("Authorization", $"Bearer {AppSettings.ImgApiKey}");
-            req.Content = new StringContent(JsonSerializer.Serialize(reqBody), Encoding.UTF8, "application/json");
-
-            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-            var resp = await new HttpClient().SendAsync(req, cts.Token);
-            resp.EnsureSuccessStatusCode();
-            var json = await resp.Content.ReadAsStringAsync();
-
-            string? b64 = null;
-            using (var doc = JsonDocument.Parse(json))
-            {
-                if (doc.RootElement.TryGetProperty("data", out var data) && data.GetArrayLength() > 0)
-                {
-                    var first = data[0];
-                    if (first.TryGetProperty("b64_json", out var b)) b64 = b.GetString();
-                    else if (first.TryGetProperty("url", out var u)) b64 = u.GetString();
-                }
-            }
-            if (string.IsNullOrWhiteSpace(b64)) return false;
-
-            var bytes = b64.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                ? await new HttpClient().GetByteArrayAsync(b64)
-                : Convert.FromBase64String(b64);
-
-            await File.WriteAllBytesAsync(AvatarPath, bytes);
+            await File.WriteAllBytesAsync(AvatarPath, r.Bytes);
             return true;
         }
         catch

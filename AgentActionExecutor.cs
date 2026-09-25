@@ -146,6 +146,15 @@ public static class AgentActionExecutor
     private static Task<bool> ConfirmDeleteAsync(string path)
         => DeleteConfirmer?.Invoke(path) ?? Task.FromResult(false);
 
+    /// <summary>
+    /// 生图通道：由 ChatPage 注入（避免本类直接依赖 UI）。
+    /// 入参是图片描述，返回 (是否成功, 给模型看的观察结果)。
+    ///
+    /// ⚠️ 以前这里**只是记了一步就回传"已记录"**，根本没调生图接口 ——
+    /// 结果 Agent 模式下模型以为画好了、用户却什么都没看到。现在必须真调。
+    /// </summary>
+    public static Func<string, Task<(bool ok, string obs)>>? ImageHandler { get; set; }
+
     // ─────────── 既有能力（终端 / 感知 API / 上网 / 生图）───────────
 
     private static async Task<ActionResult> DoCommandAsync(string cmd, AgentRun run)
@@ -223,8 +232,22 @@ public static class AgentActionExecutor
 
     private static async Task<ActionResult> DoImageAsync(string desc, AgentRun run)
     {
-        run.AddStep("img", $"生成图片 {Shorten(desc, 30)}");
-        return new ActionResult { DidAct = true, Observation = "（图片生成指令已记录，由聊天页的图片管线处理）" };
+        run.BeginStep("img", $"生成图片 {Shorten(desc, 30)}");
+
+        if (ImageHandler == null)
+        {
+            run.CompleteStep(failed: true);
+            return new ActionResult
+            {
+                DidAct = true,
+                Observation = "生图通道未就绪，这次画不了。请如实告诉用户当前无法生成图片，不要说你画好了。"
+            };
+        }
+
+        // 真调生图接口（回调由 ChatPage 注入，内部负责把图显示到气泡上）
+        var (ok, obs) = await ImageHandler(desc);
+        run.CompleteStep(failed: !ok);
+        return new ActionResult { DidAct = true, Observation = obs };
     }
 
     // ─────────── 工具 ───────────

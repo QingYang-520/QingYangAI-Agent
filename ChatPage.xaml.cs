@@ -619,6 +619,10 @@ InitializeComponent();
             catch { return false; }
         };
 
+        // 生图通道：Agent 模式下 {img:"…"} 真的去调生图接口，并把图显示在这个气泡上。
+        // 以前这条路是假的（只记一步就说"已记录"），模型以为画好了、用户却什么都没看到。
+        AgentActionExecutor.ImageHandler = desc => GenerateImageForBubbleAsync(desc, aiBubble);
+
         try
         {
             // 注意：历史里已经包含本轮用户消息（BuildHistoryMessages 会带上），
@@ -658,6 +662,7 @@ InitializeComponent();
             AgentLoopService.StepChanged -= OnStep;
             AgentLoopService.ThinkingDelta -= OnThinking;
             AgentActionExecutor.DeleteConfirmer = null;
+            AgentActionExecutor.ImageHandler = null;
             run.Finish();
             aiBubble.NotifyAgentChanged();
             aiBubble.IsWaiting = false;
@@ -791,8 +796,8 @@ InitializeComponent();
         }
         else if (sseResult.CancelledForImage)
         {
-            // 检测到文生图指令：调用图片生成 API
-            await GenerateImagePipelineAsync(aiBubble.Content, aiBubble);
+            // 检测到文生图指令：真的去调生图接口（失败会续一轮让 Ta 如实告诉用户）
+            await GenerateImagePipelineAsync(text, aiBubble.Content, aiBubble);
         }
         else if (sseResult.CancelledForBrowse)
         {
@@ -1063,18 +1068,24 @@ InitializeComponent();
                         aiBubble.IsThinkingActive = false;
                         result.ThinkingFrozen = true;
                         // 检测指令：{cmd:} / {api:} / {img:} / {browse:} / {download:} / {web:}
-                        if (delta.content.Contains("{cmd:") || delta.content.Contains("{api:") || 
-                            delta.content.Contains("{img:") || delta.content.Contains("{browse:") ||
-                            delta.content.Contains("{download:") || delta.content.Contains("{web:"))
+                        // 指令检测：**只在指令完整（带闭合）时才断流**。
+                        // 以前是"单个 delta 里出现 {img: 就断"，而取值要求 {img:"…"} 闭合 ——
+                        // SSE 把标记拆到多个 delta 时，断流了却抠不出值，管线只能静默早退
+                        // （表现：用户看到一句"画好啦"，却没有图）。
+                        var acc = aiBubble.Content;
+                        if (acc.IndexOf('{') >= 0)
                         {
                             // 提前断流，交给后续管线处理
-                            if (delta.content.Contains("{cmd:")) result.CancelledForCommand = true;
-                            if (delta.content.Contains("{api:")) result.CancelledForApi = true;
-                            if (delta.content.Contains("{img:")) result.CancelledForImage = true;
-                            if (delta.content.Contains("{browse:")) result.CancelledForBrowse = true;
-                            if (delta.content.Contains("{download:")) result.CancelledForDownload = true;
-                            if (delta.content.Contains("{web:")) result.CancelledForWeb = true;
-                            break;
+                            if (InstructionParser.Extract(acc, "cmd").Count > 0) result.CancelledForCommand = true;
+                            else if (InstructionParser.Extract(acc, "api").Count > 0) result.CancelledForApi = true;
+                            else if (InstructionParser.Extract(acc, "img").Count > 0) result.CancelledForImage = true;
+                            else if (InstructionParser.Extract(acc, "browse").Count > 0) result.CancelledForBrowse = true;
+                            else if (InstructionParser.Extract(acc, "download").Count > 0) result.CancelledForDownload = true;
+                            else if (InstructionParser.Extract(acc, "web").Count > 0) result.CancelledForWeb = true;
+
+                            if (result.CancelledForCommand || result.CancelledForApi || result.CancelledForImage
+                                || result.CancelledForBrowse || result.CancelledForDownload || result.CancelledForWeb)
+                                break;
                         }
                     }
                 }
@@ -1099,6 +1110,19 @@ InitializeComponent();
             catch { }
             FollowBottomIfNeeded();
         }
+        // 收尾补判：指令可能正好落在流末尾（最后一拍才凑齐闭合），这里再查一次
+        if (!result.CancelledForCommand && !result.CancelledForApi && !result.CancelledForImage
+            && !result.CancelledForBrowse && !result.CancelledForDownload && !result.CancelledForWeb)
+        {
+            var acc2 = aiBubble.Content;
+            if (InstructionParser.Extract(acc2, "cmd").Count > 0) result.CancelledForCommand = true;
+            else if (InstructionParser.Extract(acc2, "api").Count > 0) result.CancelledForApi = true;
+            else if (InstructionParser.Extract(acc2, "img").Count > 0) result.CancelledForImage = true;
+            else if (InstructionParser.Extract(acc2, "browse").Count > 0) result.CancelledForBrowse = true;
+            else if (InstructionParser.Extract(acc2, "download").Count > 0) result.CancelledForDownload = true;
+            else if (InstructionParser.Extract(acc2, "web").Count > 0) result.CancelledForWeb = true;
+        }
+
         result.ReadDone = true;
         result.TotalMs = (int)swDiag.ElapsedMilliseconds;
         // 摆出来给人看：首块延迟≈总时长 → 卡在网络/服务端；首块很快但界面不动 → 卡在渲染
@@ -1965,71 +1989,102 @@ InitializeComponent();
     /// 文生图管线：检测到 {img:"描述"} → 先显示预加载图片框架，调用文生图 API
     /// 生成图片（返回 base64），完成后填充进框架；失败则显示错误状态。
     /// </summary>
-    private async Task GenerateImagePipelineAsync(string rawText, ChatMsg aiBubble)
+    /// <summary>
+    /// 生图落盘 + 显示 —— Agent 模式和普通模式**共用**的那一段。
+    /// 返回 (是否成功, 给模型看的观察结果)，观察结果会直接进 Agent 的对话上下文。
+    /// </summary>
+    private async Task<(bool ok, string obs)> GenerateImageForBubbleAsync(string desc, ChatMsg bubble)
     {
-        var descs = ExtractImageCommands(rawText);
-        if (descs.Count == 0) return;
-
-        if (!AppSettings.ImgEnabled)
-        {
-            aiBubble.ImageState = "error";
-            aiBubble.Content = "（未配置文生图模型，无法生成图片）";
-            _ = ChatStore.Instance.SaveMessageAsync(aiBubble);
-            UpdateContextLabel();
-            return;
-        }
-
-        // 1) 预加载状态：先摆出一个加载中的图片框架
-        aiBubble.Content = "";
-        aiBubble.ImageState = "loading";
+        bubble.ImageState = "loading";
         ScrollToBottom();
         FollowBottomIfNeeded();
 
+        var r = await ImageGenService.GenerateAsync(desc);
+
+        if (r.Ok && r.Bytes != null)
+        {
+            try
+            {
+                // 图片落盘为文件（历史只存路径），base64 仅供本次会话显示
+                var path = await ChatStore.SaveImageBytesAsync(r.Bytes, ".png");
+                bubble.ImageUrl = path;
+                if (!string.IsNullOrWhiteSpace(r.B64)) bubble.ImageBase64 = r.B64;
+                bubble.ImageState = "done";
+                ScrollToBottom();
+                _ = ChatStore.Instance.SaveMessageAsync(bubble);
+                return (true,
+                    "✅ 图片已生成并显示在聊天气泡里，用户此刻能看到这张图。"
+                    + "不要再输出 {img:...}，也不要重复说\"我画好了\"；"
+                    + "可以在 {done:\"...\"} 里简短说明并问要不要调整。");
+            }
+            catch (Exception ex)
+            {
+                bubble.ImageState = "error";
+                _ = ChatStore.Instance.SaveMessageAsync(bubble);
+                return (false, "❌ 图片画出来了但保存失败：" + ex.Message + "。请如实告诉用户。");
+            }
+        }
+
+        bubble.ImageState = "error";
+        _ = ChatStore.Instance.SaveMessageAsync(bubble);
+        return (false,
+            $"❌ 生成图片失败：{r.Error}（一共尝试了 {r.Attempts} 次）。"
+            + "用户没有看到任何图片。请如实告诉用户失败了和原因，**绝不可以说\"画好啦\"**；"
+            + "可以建议 TA 换个描述重试，或者去设置里检查文生图配置。");
+    }
+
+    /// <summary>
+    /// 普通聊天的生图管线：拿到 {img:"描述"} → 真的去画 → 失败就续一轮让 Ta 如实告诉用户。
+    /// </summary>
+    private async Task GenerateImagePipelineAsync(string userText, string rawText, ChatMsg aiBubble)
+    {
+        var descs = ExtractImageCommands(rawText);
+
+        // 断流时明明看到 {img: 却抠不出描述（多半是被 SSE 拆包了）——
+        // 不能静默收场，否则用户只会看到一句"画好啦"却没有图。让模型重发一次。
+        if (descs.Count == 0)
+        {
+            await ContinueAfterImageAsync(userText, aiBubble,
+                "（系统提示）你刚才输出的 {img:...} 指令没有被客户端识别（格式不对或被截断了）。\n"
+                + "如果确实要画图，请重新完整输出一条 {img:\"详细描述\"}；"
+                + "不需要画图就用 {done:\"...\"} 正常回应用户。");
+            return;
+        }
+
+        // 开始画之前先把模型那句"画好啦"清掉，避免它和图不一致
+        aiBubble.Content = "";
+
+        var (ok, obs) = await GenerateImageForBubbleAsync(descs[0], aiBubble);
+
+        // 成功不续轮（图本身就是答案，省一轮延迟和 token）；失败才让 Ta 用自己的话道歉
+        if (!ok)
+            await ContinueAfterImageAsync(userText, aiBubble, "【图片生成结果】\n" + obs);
+    }
+
+    /// <summary>生图失败 / 指令没识别时，把情况回传给模型续说一轮（照下载管线同构）。</summary>
+    private async Task ContinueAfterImageAsync(string userText, ChatMsg aiBubble, string hint)
+    {
+        var continueMessages = new List<object>
+        {
+            new { role = "system", content = AppSettings.BuildSystemPrompt() },
+            new { role = "user", content = userText },
+            new { role = "assistant", content = InstructionParser.RemoveInstructions(aiBubble.Content) },
+            new { role = "user", content = hint }
+        };
         try
         {
-            // 2) 调用文生图 API（OpenAI 兼容，返回 base64）
-            string model = string.IsNullOrWhiteSpace(AppSettings.ImgModel) ? "gpt-image-1" : AppSettings.ImgModel;
-            var reqBody = new
-            {
-                model,
-                prompt = descs[0],
-                response_format = "b64_json",
-                size = "1024x1024"
-            };
-            using var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ImgApiUrl);
-            req.Headers.Add("Authorization", $"Bearer {AppSettings.ImgApiKey}");
-            req.Content = new StringContent(JsonSerializer.Serialize(reqBody), Encoding.UTF8, "application/json");
-
-            // 图片生成耗时较长，放宽超时
-            var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
-            var resp = await _httpClient.SendAsync(req, cts.Token);
+            var body = BuildChatBody(AppSettings.ResolveChatModel(AppSettings.ForceThinking), continueMessages, stream: true);
+            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
+            var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
             resp.EnsureSuccessStatusCode();
-            var json = await resp.Content.ReadAsStringAsync();
-
-            using var doc = JsonDocument.Parse(json);
-            string? b64 = null;
-            if (doc.RootElement.TryGetProperty("data", out var data) && data.GetArrayLength() > 0)
-            {
-                var first = data[0];
-                if (first.TryGetProperty("b64_json", out var b)) b64 = b.GetString();
-                else if (first.TryGetProperty("url", out var u)) b64 = u.GetString(); // 备用：URL 形式
-            }
-
-            if (string.IsNullOrWhiteSpace(b64))
-                throw new Exception("接口未返回图片数据");
-
-            // 3) 完成：图片落盘为文件（历史只存路径），base64 仅供本次会话显示
-            var imagePath = await ChatStore.SaveImageBytesAsync(Convert.FromBase64String(b64), ".png");
-            aiBubble.ImageBase64 = b64;
-            aiBubble.ImageUrl = imagePath;
-            aiBubble.ImageState = "done";
-            aiBubble.Content = $"（已生成图片：{descs[0]}）";
-            ScrollToBottom();
+            await ConsumeSseAsync(resp, aiBubble);
         }
-        catch (Exception ex)
+        catch
         {
-            aiBubble.ImageState = "error";
-            aiBubble.Content = "（图片生成失败：" + ex.Message + "）";
+            // 连"解释失败"这一轮都挂了，至少别让气泡空着
+            if (string.IsNullOrWhiteSpace(aiBubble.Content))
+                aiBubble.Content = "（图片没画成，也没能说上话。过会儿再试试。）";
         }
         finally
         {
@@ -2165,6 +2220,7 @@ public class ChatMsg : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasImage)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ImageSource)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsImageDone)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowImageFrame)));
         }
     }
 
@@ -2180,6 +2236,7 @@ public class ChatMsg : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasImage)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ImageSource)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsImageDone)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowImageFrame)));
         }
     }
 
@@ -2194,6 +2251,7 @@ public class ChatMsg : INotifyPropertyChanged
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ImageState)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsImageLoading)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsImageError)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowImageFrame)));
         }
     }
 
@@ -2225,6 +2283,16 @@ public class ChatMsg : INotifyPropertyChanged
     /// <summary>图片是否生成失败。</summary>
     [JsonIgnore]
     public bool IsImageError => _imageState == "error";
+
+    /// <summary>
+    /// AI 图框是否该显示（加载中 / 出错 / 已完成都要显示）。
+    ///
+    /// ⚠️ 不能直接用 <see cref="HasImage"/> —— 它要求真有图，而失败时图是空的，
+    /// 结果整个图框（连同里面的错误提示）一起被隐藏，用户根本看不到失败原因。
+    /// 用户自己发的那张图仍然用 HasImage（见 ChatPage.xaml）。
+    /// </summary>
+    [JsonIgnore]
+    public bool ShowImageFrame => IsImageLoading || IsImageError || IsImageDone;
 
     /// <summary>是否有语音消息。</summary>
     [JsonIgnore]

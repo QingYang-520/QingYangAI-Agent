@@ -164,8 +164,10 @@
                                         <Label Text="朗读" TextColor="#D5C2C1" FontSize="12" VerticalOptions="Center"/>
                                     </HorizontalStackLayout>
 
-                                    <!-- AI 生成的图片框架：预加载 → 完成后填充 -->
-                                    <Border IsVisible="{Binding HasImage}"
+                                    <!-- AI 生成的图片框架：预加载 → 完成后填充。
+                                         用 ShowImageFrame 而不是 HasImage —— 失败时图是空的，
+                                         用 HasImage 会把整个框（含错误提示）一起藏起来。 -->
+                                    <Border IsVisible="{Binding ShowImageFrame}"
                                             BackgroundColor="#3A3333"
                                             StrokeThickness="0"
                                             StrokeShape="RoundRectangle 10"

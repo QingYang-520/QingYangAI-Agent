@@ -1,3 +1,4 @@
+using System.Threading;
 using SQLite;
 
 namespace 青阳AI;
@@ -107,7 +108,7 @@ public sealed class ChatStore
     {
         await EnsureInitAsync();
         var rows = await _db.Table<MsgRow>().OrderBy(r => r.Id).ToListAsync();
-        return rows.Select(ToMsg).ToList();
+        return DedupNearIdentical(rows.Select(ToMsg).ToList());
     }
 
     /// <summary>加载某条消息之后的新消息（后台主动消息到达后增量同步用）。</summary>
@@ -115,17 +116,65 @@ public sealed class ChatStore
     {
         await EnsureInitAsync();
         var rows = await _db.Table<MsgRow>().Where(r => r.Id > id).OrderBy(r => r.Id).ToListAsync();
-        return rows.Select(ToMsg).ToList();
+        return DedupNearIdentical(rows.Select(ToMsg).ToList());
     }
+
+    /// <summary>
+    /// 存消息的**串行闸**。
+    ///
+    /// 所有调用点都是 `_ = SaveMessageAsync(...)` 发了不管。同一条消息并发存两次时，
+    /// 两次都会看到 `Id == 0`（第一次还没插完、Id 还没回写）→ **插出两条一模一样的行**。
+    /// 表现就是：AI 回完消息 → 打开设置再关掉（会同步数据库）→ 多出一轮同样的对话；
+    /// 生图那轮因为存得更频繁，能多出 3 张一样的图。
+    /// 这里串行化，保证第一次插完把 Id 回写之后，第二次才进来（走 Update）。
+    /// </summary>
+    private static readonly SemaphoreSlim _saveLock = new(1, 1);
 
     /// <summary>保存一条消息：新消息插入并回写 Id，已有 Id 的更新。</summary>
     public async Task SaveMessageAsync(ChatMsg m)
     {
         await EnsureInitAsync();
-        if (m.Id == 0)
-            m.Id = await _db.InsertAsync(ToRow(m));
-        else
-            await _db.UpdateAsync(ToRow(m));
+        await _saveLock.WaitAsync();
+        try
+        {
+            if (m.Id == 0)
+                m.Id = await _db.InsertAsync(ToRow(m));
+            else
+                await _db.UpdateAsync(ToRow(m));
+        }
+        finally { _saveLock.Release(); }
+    }
+
+    /// <summary>
+    /// 去掉「同一侧、内容完全相同、时间戳几乎一致」的重复行。
+    ///
+    /// 老数据里已经有并发存出来的重复行（闸门是后加的，只管新数据），
+    /// 读的时候在这儿吃掉，界面上就不会再冒出重复的一轮对话 / 几张一样的图。
+    /// **只读时过滤，不删库** —— 不动用户数据。
+    ///
+    /// 窗口取 1 秒：并发存的是**同一个 ChatMsg 对象**，`ToRow` 直接用它的 `Timestamp`，
+    /// 所以重复行的时间戳是**完全相同**的；而用户真手动连发两句一样的话，间隔起码几秒。
+    /// 这样既抓得住重复，又不会误伤。
+    /// </summary>
+    private static List<ChatMsg> DedupNearIdentical(List<ChatMsg> msgs)
+    {
+        var outp = new List<ChatMsg>(msgs.Count);
+        foreach (var m in msgs)
+        {
+            if (outp.Count > 0)
+            {
+                var prev = outp[^1];
+                if (prev.IsUser == m.IsUser
+                    && string.Equals(prev.Content, m.Content, StringComparison.Ordinal)
+                    && string.Equals(prev.ImageUrl, m.ImageUrl, StringComparison.Ordinal)
+                    && Math.Abs((m.Timestamp - prev.Timestamp).TotalSeconds) <= 1)
+                {
+                    continue;   // 1 秒内完全相同的同侧消息 = 并发存出来的重复行
+                }
+            }
+            outp.Add(m);
+        }
+        return outp;
     }
 
     /// <summary>后台主动消息专用插入（不依赖 UI 的 ChatMsg 实例）。</summary>
@@ -162,7 +211,7 @@ public sealed class ChatStore
         var rows = await _db.Table<MsgRow>()
             .Where(r => r.Timestamp >= start && r.Timestamp < end)
             .OrderBy(r => r.Id).ToListAsync();
-        return rows.Select(ToMsg).ToList();
+        return DedupNearIdentical(rows.Select(ToMsg).ToList());
     }
 
     /// <summary>最近 n 条消息（时间正序，通知快捷回复生成上下文用）。</summary>
@@ -170,7 +219,7 @@ public sealed class ChatStore
     {
         await EnsureInitAsync();
         var rows = await _db.Table<MsgRow>().OrderByDescending(r => r.Id).Take(n).ToListAsync();
-        return rows.Select(ToMsg).Reverse().ToList();
+        return DedupNearIdentical(rows.Select(ToMsg).Reverse().ToList());
     }
 
     /// <summary>插入一条用户消息（通知栏快捷回复用）。</summary>

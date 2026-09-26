@@ -1396,8 +1396,15 @@ InitializeComponent();
         {
             new { role = "system", content = summarySystem },
             new { role = "user", content = originalPrompt },
-            new { role = "assistant", content = toolResults },
-            new { role = "user", content = "请根据上面的工具执行结果回答用户的问题。" }
+            // ⚠️ 工具结果必须当**用户侧**消息回传，**绝不能当 assistant**。
+            // 当 assistant 的话，模型会把它当成"我自己上一条说过的话"，
+            // 下次就照着这个格式**自己编结果**（伪造 FOREGROUND / BATTERY / SCREEN_TIME 那种），
+            // 而且不再真的去输出 {api:"…"} 指令 —— 表现就是"瞎调用API、黑气泡还不出来"。
+            new { role = "user", content =
+                "【客户端回传的真实数据】\n" + toolResults +
+                "\n\n（提醒：上面这段是**客户端**给你的数据，不是你说过的话，**不要模仿它的格式自己写**。" +
+                "里面没有的信息就老实说看不到，不许猜、不许编。）\n\n" +
+                "请根据上面的数据回答用户刚才的问题。" }
         };
 
         var reqBody = BuildChatBody(model, messages, stream: true);
@@ -1796,9 +1803,12 @@ InitializeComponent();
         };
         // 把图片路径与视觉识别结果作为临时上下文（不持久化到 Messages，避免历史文件保存 base64）
         messages.Add(new { role = "user", content = prompt });
-        messages.Add(new { role = "assistant", content = "（视觉识别结果）\n" + visionResult });
+        // ⚠️ 识别结果必须当**用户侧**回传，不能当 assistant ——
+        // 当 assistant 模型会以为是自己说的，进而照着编（同 StreamSummaryReply 那个坑）
+        messages.Add(new { role = "user", content = "【客户端回传的视觉识别结果】\n" + visionResult });
         messages.Add(new { role = "user", content =
-            "请根据上面的视觉识别结果回答用户的问题，用纯普通文本，禁止 Markdown，直接给结论。" });
+            "请根据上面的视觉识别结果回答用户的问题，用纯普通文本，禁止 Markdown，直接给结论。" +
+            "结果里没有的东西不要编。" });
 
         var reqBody = BuildChatBody(model, messages, stream: true);
         var json = JsonSerializer.Serialize(reqBody);

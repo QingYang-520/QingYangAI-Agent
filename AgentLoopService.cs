@@ -406,7 +406,10 @@ public static class AgentLoopService
                     + "用于查系统设置、应用信息、存储、网络等本机实况。");
         sb.AppendLine("【感知 API】{api:\"名\"} ——可用："
                     + string.Join(" / ", ApiRegistry.All.Select(a => a.Id)) + "。"
-                    + "想知道用户此刻在干嘛、睡了没、忙不忙时用它。");
+                    + "想知道用户此刻在干嘛、睡了没、忙不忙时用它。"
+                    + "**要数据只能靠这条指令**：绝不许自己在回复里写 \"FOREGROUND: …\" / \"BATTERY: …\" "
+                    + "这类「大写名 + 冒号」的结果行 —— 那是客户端回传的格式，你写了就是凭空编的。"
+                    + "没等到客户端回传就别下结论，查失败就如实说看不到。");
         if (AppSettings.BrowserPermission)
             sb.AppendLine("【上网】{browse:\"网址或搜索词\"} ——抓取网页/搜索的正文内容（只回正文，"
                         + "但结果末尾会附上【页面上的文件 / 下载链接】，能拿到 href）。");

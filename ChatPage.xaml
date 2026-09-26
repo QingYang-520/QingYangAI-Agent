@@ -153,6 +153,18 @@
                                            FontSize="16"
                                            LineBreakMode="WordWrap"/>
 
+                                    <!-- 错误行：**单独一块**，不跟正文混在一起（也不覆盖正文） -->
+                                    <Border IsVisible="{Binding HasError}"
+                                            BackgroundColor="#33B0413E"
+                                            StrokeThickness="0"
+                                            StrokeShape="RoundRectangle 8"
+                                            Padding="10,7">
+                                        <Label Text="{Binding ErrorText}"
+                                               TextColor="#F2B8B5"
+                                               FontSize="12"
+                                               LineBreakMode="WordWrap"/>
+                                    </Border>
+
                                     <!-- 时间戳 -->
                                     <Label Text="{Binding TimeText}" TextColor="#9E8D8C" FontSize="11"
                                            HorizontalOptions="Start" Margin="0,2,0,0"/>

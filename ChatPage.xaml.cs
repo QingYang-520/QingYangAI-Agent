@@ -612,6 +612,7 @@ InitializeComponent();
             {
                 // 切后台被系统冻结、服务端掐线等导致的连接中断：自动重试一次
                 aiMsg.Content = "";
+                aiMsg.ErrorText = "";   // 重试就把上次的错误行清掉
                 aiMsg.Thinking = "";
                 aiMsg.ThinkingExpanded = false;
                 await StreamRequest(text, aiMsg);
@@ -856,18 +857,15 @@ InitializeComponent();
     }
 
     /// <summary>
-    /// 把错误写进气泡 —— **但绝不覆盖已经流出来的内容**。
+    /// 出错时把错误**单独放到气泡的错误行**里 —— 正文一个字都不动。
     ///
-    /// 以前是直接 `Content = 错误文案`，结果流到一半出错时，
-    /// 用户刚看到的字**瞬间被错误消息盖掉**（体感特别糟：明明看到字了，一闪就没了）。
-    /// 现在：已经有内容就保留，错误另起一行跟在后面。
+    /// 历史坑：最早是 `Content = 错误文案`，把用户刚看到的字**瞬间顶掉**；
+    /// 后来改成把错误拼在正文后面，那也是"以香盖臭"——错误混在回复里，看着像 Ta 说的话。
+    /// 正确做法：正文归正文，错误归错误，各占一块。
     /// </summary>
     private static void ShowErrorOn(ChatMsg bubble, string friendlyError)
     {
-        var partial = bubble.Content?.TrimEnd() ?? "";
-        bubble.Content = string.IsNullOrWhiteSpace(partial)
-            ? friendlyError
-            : partial + "\n\n⚠️ " + friendlyError;
+        bubble.ErrorText = friendlyError;
     }
 
     /// <summary>
@@ -2895,6 +2893,34 @@ public class ChatMsg : INotifyPropertyChanged
         _revealed = -1;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayContent)));
     }
+
+    // ───────────── 错误行（和正文分开显示）─────────────
+
+    private string _errorText = "";
+
+    /// <summary>
+    /// 出错时的错误行，**单独显示在正文下面**。
+    ///
+    /// 刻意不拼进 <see cref="Content"/> —— 错误混在回复里会看着像 Ta 说的话，
+    /// 也会把已经流出来的正文搅浑。正文归正文、错误归错误。
+    /// 只存在内存里（不落库）：错误是临时状态，重启后消失没关系。
+    /// </summary>
+    [JsonIgnore]
+    public string ErrorText
+    {
+        get => _errorText;
+        set
+        {
+            if (_errorText == value) return;
+            _errorText = value ?? "";
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ErrorText)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasError)));
+        }
+    }
+
+    /// <summary>有没有错误要显示。</summary>
+    [JsonIgnore]
+    public bool HasError => !string.IsNullOrEmpty(_errorText);
 
     public bool IsUser
     {

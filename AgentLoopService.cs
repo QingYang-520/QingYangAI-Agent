@@ -44,6 +44,9 @@ public static class AgentLoopService
         public AgentRun Run { get; set; } = new();
         /// <summary>是否因为时限到达而被强制收尾（而非任务自然完成）。</summary>
         public bool TimedOut { get; set; }
+
+        /// <summary>是否判定为"卡住"（同一个动作反复重试、结果一直没变）。</summary>
+        public bool Stuck { get; set; }
         /// <summary>错误信息（非空表示循环失败）。</summary>
         public string Error { get; set; } = "";
     }
@@ -94,6 +97,14 @@ public static class AgentLoopService
         int unknownRounds = 0;
         // 最近一次模型说的话，兜底收尾时用作最终答复
         string lastSaid = "";
+
+        // ── 卡死检测 ──
+        // 同一个动作（标记 + 参数）反复重试 = 在原地打转。
+        // 典型场景：Shizuku 没授权 → 命令返回"未授权" → 模型不甘心又发同一条命令 → …
+        // **重复做同一个动作会被当成"有进展"**，光靠 MaxIdleRounds 拦不住，
+        // 会一直跑到轮次/时限上限 —— 用户看到的就是"一直在执行，没完没了"。
+        var actionRepeat = new Dictionary<string, int>();
+        const int MaxSameAction = 3;
 
         for (int iteration = 0; iteration < AppSettings.AgentMaxIterations; iteration++)
         {
@@ -191,6 +202,22 @@ public static class AgentLoopService
             }
             idleRounds = 0;
 
+            // 统计这一轮的动作，看有没有在原地打转
+            string stuckMarker = "";
+            foreach (var (marker, value) in actions)
+            {
+                var key = marker + "|" + value;
+                actionRepeat[key] = actionRepeat.GetValueOrDefault(key) + 1;
+                if (actionRepeat[key] > MaxSameAction && stuckMarker.Length == 0)
+                    stuckMarker = marker;
+            }
+            if (stuckMarker.Length > 0)
+            {
+                result.Stuck = true;
+                run.AddStep("fail", $"「{stuckMarker}」重复 {MaxSameAction} 次以上且结果没变，判定卡住");
+                break;   // 交给下面的"强制收尾"让模型如实交代
+            }
+
             // 逐个执行，累积观察结果
             var observations = new StringBuilder();
             foreach (var (marker, value) in actions)
@@ -227,7 +254,9 @@ public static class AgentLoopService
         // —— 收尾：时限到 / 迭代到顶 / 出错 ——
         if (string.IsNullOrEmpty(result.Error))
         {
-            if (result.TimedOut)
+            if (result.Stuck)
+                run.AddStep("fail", "动作重复太多次，正在收尾");
+            else if (result.TimedOut)
                 run.AddStep("fail", "到达时限，正在收尾");
             else
                 run.AddStep("fail", "到达循环上限，正在收尾");
@@ -237,8 +266,13 @@ public static class AgentLoopService
                 messages.Add(new
                 {
                     role = "user",
-                    content = "（系统提示）时间/轮次已到上限，请立即停止执行动作，" +
-                              "基于目前已经拿到的信息，直接给用户一个简明的最终答复。输出 {done:\"最终答复\"}。"
+                    content = result.Stuck
+                        ? "（系统提示）同一个动作你已经重复试了好几次，结果一直没变"
+                          + "（多半是没权限、或条件不具备）。**立即停止重试**，别再发那条指令了。"
+                          + "请用一两句话如实告诉用户卡在哪一步、需要 TA 做什么（比如去授权、换个方式），"
+                          + "然后输出 {done:\"最终答复\"}。"
+                        : "（系统提示）时间/轮次已到上限，请立即停止执行动作，" +
+                          "基于目前已经拿到的信息，直接给用户一个简明的最终答复。输出 {done:\"最终答复\"}。"
                 });
                 var final = await SendOnceAsync(messages, cancellationToken);
                 var doneMsgs = InstructionParser.Extract(final, "done");

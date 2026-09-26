@@ -168,8 +168,20 @@ public static class AgentActionExecutor
             if (!string.IsNullOrWhiteSpace(r.Stdout)) sb.Append(r.Stdout);
             if (!string.IsNullOrWhiteSpace(r.Stderr)) sb.AppendLine("[stderr] " + r.Stderr);
             if (r.ExitCode != 0) sb.Append($"(exit {r.ExitCode})");
+
+            // 授权类失败：明确告诉模型"重试没用"。
+            // 否则它会不甘心地一遍遍发同一条命令，用户看到的就是"一直在执行，没完没了"。
+            var text = sb.ToString();
+            if (text.Contains("未授权") || text.Contains("没有授权")
+                || text.Contains("not authorized", StringComparison.OrdinalIgnoreCase))
+            {
+                text += "\n（提示：Shizuku 没授权、或服务没启动 —— **重试同一条命令没用**。"
+                      + "请立刻停止重试，直接告诉用户去「设置 → Shizuku」点「请求 Shizuku 授权」，"
+                      + "或者换一个不需要授权的办法。）";
+            }
+
             run.CompleteStep(failed: r.ExitCode != 0);
-            return new ActionResult { DidAct = true, Observation = sb.ToString() };
+            return new ActionResult { DidAct = true, Observation = text };
         }
         catch (Exception ex)
         {

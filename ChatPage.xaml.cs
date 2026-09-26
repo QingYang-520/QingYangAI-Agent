@@ -806,14 +806,72 @@ InitializeComponent();
     /// <summary>友好的网络错误提示。</summary>
     private string FriendlyNetworkError(Exception ex)
     {
+        // ① 有 HTTP 状态码：按码给具体原因（比笼统的"网络连接失败"有用得多）
         if (ex is HttpRequestException httpEx && httpEx.StatusCode.HasValue)
         {
-            var code = (int)httpEx.StatusCode.Value;
-            if (code == 401) return "API Key 无效，请检查设置";
-            if (code == 429) return "请求太频繁，请稍后再试";
-            if (code >= 500) return "服务器错误，请稍后再试";
+            int code = (int)httpEx.StatusCode.Value;
+            return code switch
+            {
+                400 => "服务商拒绝了这次请求（400）。多半是模型名填错，或这个模型不支持当前参数。",
+                401 => "API Key 无效，请检查设置",
+                403 => "服务商拒绝了这次请求（403）：可能是 Key 没权限、余额不足，或模型没开通。",
+                404 => "接口地址不对（404）。设置里的 URL 要填完整端点，比如 https://…/v1/chat/completions",
+                429 => "被服务商限流了（429）。稍等一会儿再发；\n一直这样多半是额度用完了，或同时发得太快。",
+                >= 500 => $"服务商那边出错了（{code}），稍后再试。",
+                _ => $"服务商返回 HTTP {code}"
+            };
         }
-        return "网络连接失败：" + ex.Message;
+
+        // ② 超时
+        if (ex is TaskCanceledException || ex is OperationCanceledException)
+            return "请求超时了。可能是网络慢，或者服务商那边卡住了。";
+
+        // ③ 底层是 Java 异常（Android 网络栈抛的）：
+        //    .NET 拿到 Java 异常的 message 时经常是 "Exception_WasThrown" 这种占位符，
+        //    直接甩给用户等于没提示 —— 翻成人话，并把真实类型带上，方便排查。
+        var java = FindJavaException(ex);
+        if (java != null)
+            return "网络连接被中断（" + java + "）。\n"
+                 + "常见原因：网络切换或断流、服务商掐线、代理/证书拦截。\n"
+                 + "过一会儿重发试试；一直这样就检查网络，或换个接口地址。";
+
+        return "网络连接失败：" + DescribeException(ex);
+    }
+
+    /// <summary>
+    /// 往异常链里找 Java 异常（Android 网络栈抛的）。找到就返回它的类型名，没有返回 null。
+    /// </summary>
+    private static string? FindJavaException(Exception? ex)
+    {
+        for (int i = 0; ex != null && i < 6; i++, ex = ex.InnerException)
+        {
+            var full = ex.GetType().FullName ?? "";
+            var msg = ex.Message ?? "";
+            if (full.Contains("Java", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("Exception_WasThrown", StringComparison.OrdinalIgnoreCase))
+            {
+                var detail = msg.Contains("Exception_WasThrown", StringComparison.OrdinalIgnoreCase)
+                    ? full
+                    : (string.IsNullOrWhiteSpace(msg) ? full : full + "：" + msg);
+                return string.IsNullOrWhiteSpace(detail) ? ex.GetType().Name : detail;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 把异常链拼成一行能读的（最多四层）。
+    /// 有些异常 `Message` 是空的，那时候至少把类型名带上 —— 总比空白强。
+    /// </summary>
+    private static string DescribeException(Exception ex)
+    {
+        var parts = new List<string>();
+        for (var e = ex; e != null && parts.Count < 4; e = e.InnerException)
+        {
+            var m = e.Message ?? "";
+            parts.Add(string.IsNullOrWhiteSpace(m) ? e.GetType().Name : e.GetType().Name + "：" + m);
+        }
+        return string.Join(" ← ", parts);
     }
 
     /// <summary>是否为可重试的网络错误（连接中断/超时）。</summary>
@@ -1098,6 +1156,13 @@ InitializeComponent();
         {
             try { line = await reader.ReadLineAsync(stallCts.Token); }
             catch (OperationCanceledException) { break; }   // 看门狗叫停
+            catch (Exception) when (stallCts.IsCancellationRequested)
+            {
+                // 看门狗叫停时，底层（Android 网络栈）抛的**可能是 Java 异常**而不是
+                // OperationCanceledException —— 那就被这里兜住，别把"我主动断的"
+                // 显示成吓人的报错。下面 result.Stalled 会给出人话提示。
+                break;
+            }
             if (line == null) break;
             lastDataTicks = DateTime.UtcNow.Ticks;
             if (!line.StartsWith("data: ")) continue;

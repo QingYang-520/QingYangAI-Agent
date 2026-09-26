@@ -505,6 +505,10 @@ InitializeComponent();
         if (element is Button btn && btn.BackgroundColor == oldColor && btn.StyleId != "btnSend") btn.BackgroundColor = theme;
         if (element is Border bd && bd.BackgroundColor == oldColor && bd.StyleId != "chatBubble") bd.BackgroundColor = theme;
         if (element is MorphIcon mi && mi.IconColor == oldColor) mi.IconColor = theme;
+        // 转圈指示器也要跟主题色（以前漏了）
+        if (element is ActivityIndicator ai && ai.Color == oldColor) ai.Color = theme;
+        // 注：DotMotionLoader 是 GraphicsView，不在这个遍历里 ——
+        //     它自己每帧直读 AppSettings.ThemeColor，换主题立刻生效（比遍历更实时）。
 
         if (element is Layout layout)
         {
@@ -615,7 +619,7 @@ InitializeComponent();
         }
         catch (Exception ex)
         {
-            aiMsg.Content = FriendlyNetworkError(ex);
+            ShowErrorOn(aiMsg, FriendlyNetworkError(ex));
         }
         finally
         {
@@ -705,7 +709,7 @@ InitializeComponent();
 
             // 时限到 / 出错：给个交代而不是静默
             if (!string.IsNullOrEmpty(loopResult.Error) && loopResult.Error != "__cancelled__")
-                aiBubble.Content = FriendlyNetworkError(new Exception(loopResult.Error));
+                ShowErrorOn(aiBubble, FriendlyNetworkError(new Exception(loopResult.Error)));
             else
             {
                 var head = loopResult.TimedOut
@@ -720,7 +724,7 @@ InitializeComponent();
         }
         catch (Exception ex)
         {
-            aiBubble.Content = FriendlyNetworkError(ex);
+            ShowErrorOn(aiBubble, FriendlyNetworkError(ex));
         }
         finally
         {
@@ -849,6 +853,21 @@ InitializeComponent();
                  + "过一会儿重发试试；一直这样就检查网络，或换个接口地址。";
 
         return "网络连接失败：" + DescribeException(ex);
+    }
+
+    /// <summary>
+    /// 把错误写进气泡 —— **但绝不覆盖已经流出来的内容**。
+    ///
+    /// 以前是直接 `Content = 错误文案`，结果流到一半出错时，
+    /// 用户刚看到的字**瞬间被错误消息盖掉**（体感特别糟：明明看到字了，一闪就没了）。
+    /// 现在：已经有内容就保留，错误另起一行跟在后面。
+    /// </summary>
+    private static void ShowErrorOn(ChatMsg bubble, string friendlyError)
+    {
+        var partial = bubble.Content?.TrimEnd() ?? "";
+        bubble.Content = string.IsNullOrWhiteSpace(partial)
+            ? friendlyError
+            : partial + "\n\n⚠️ " + friendlyError;
     }
 
     /// <summary>

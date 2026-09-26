@@ -93,11 +93,11 @@ public class DotMotionLoader : GraphicsView
         /// <summary>相邻格子的相位差（对角线方向传播）。</summary>
         private const double PhaseStep = 0.16;
 
-        // ── 配色（取自原数据）──
-        // primary    = [0.67843, 0.89412, 1.0]
-        // background = [0.17647, 0.21569, 0.26275]
-        private static readonly Color PrimaryColor = Color.FromRgb(173, 228, 255);
-        private static readonly Color BackColor = Color.FromRgb(45, 55, 67);
+        // ── 配色 ──
+        // **跟随应用主题色**：在设置里换主题，这里的点阵立刻跟着变（每帧读一次）。
+        // 底块用主题色压暗（做成"主色的影子"），整体色调才和 App 一致。
+        // 原素材是固定的 rgb(173,228,255)，但那样跟主题色对不上 —— 按用户要求改成跟随。
+        private const float BackLuminosity = 0.18f;   // 底块亮度（0=黑 1=白）
 
         /// <summary>一个完整周期的秒数（原数据 duration = 1.1111）。</summary>
         public const double DurationSec = 1.1111;
@@ -113,6 +113,12 @@ public class DotMotionLoader : GraphicsView
                 if (size <= 2) return;
 
                 float scale = size / CanvasSize;
+
+                // 每帧读一次主题色（在设置里换主题，点阵立刻跟着变）
+                Color primary;
+                try { primary = AppSettings.ThemeColor; }
+                catch { primary = Color.FromRgb(173, 228, 255); }
+                var back = primary.WithLuminosity(BackLuminosity);
 
                 canvas.SaveState();
                 canvas.Translate(rect.X, rect.Y);
@@ -132,11 +138,11 @@ public class DotMotionLoader : GraphicsView
                         float x = CellMargin + col * CellStep;
                         float y = CellMargin + row * CellStep;
 
-                        // ① 底块：深色，常驻
-                        canvas.FillColor = BackColor.WithAlpha(backAlpha);
+                        // ① 底块：主题色压暗的"影子"，常驻
+                        canvas.FillColor = back.WithAlpha(backAlpha);
                         canvas.FillRoundedRectangle(x, y, CellSize, CellSize, CornerRadius);
 
-                        // ② 前块：亮色，从中心长大/缩小，带辉光
+                        // ② 前块：主题色本体，从中心长大/缩小，带辉光
                         float front = CellSize * grow;
                         if (front > 0.5f)
                         {
@@ -144,8 +150,8 @@ public class DotMotionLoader : GraphicsView
                             float radius = Math.Min(front / 2f, CornerRadius * front / CellSize);
 
                             // 辉光的模糊半径要跟着缩放走，否则控件很小时会糊成一圈光晕
-                            canvas.SetShadow(new SizeF(0, 0), 8f * scale, PrimaryColor.WithAlpha(frontAlpha));
-                            canvas.FillColor = PrimaryColor.WithAlpha(frontAlpha);
+                            canvas.SetShadow(new SizeF(0, 0), 8f * scale, primary.WithAlpha(frontAlpha));
+                            canvas.FillColor = primary.WithAlpha(frontAlpha);
                             canvas.FillRoundedRectangle(x + offset, y + offset, front, front, radius);
                             canvas.SetShadow(SizeF.Zero, 0, Colors.Transparent);
                         }

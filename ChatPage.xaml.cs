@@ -810,16 +810,29 @@ InitializeComponent();
         if (ex is HttpRequestException httpEx && httpEx.StatusCode.HasValue)
         {
             int code = (int)httpEx.StatusCode.Value;
-            return code switch
+            var baseMsg = code switch
             {
                 400 => "服务商拒绝了这次请求（400）。多半是模型名填错，或这个模型不支持当前参数。",
                 401 => "API Key 无效，请检查设置",
                 403 => "服务商拒绝了这次请求（403）：可能是 Key 没权限、余额不足，或模型没开通。",
                 404 => "接口地址不对（404）。设置里的 URL 要填完整端点，比如 https://…/v1/chat/completions",
-                429 => "被服务商限流了（429）。稍等一会儿再发；\n一直这样多半是额度用完了，或同时发得太快。",
+                429 => "被服务商限流了（429）。\n"
+                     + "注意：不一定是总额度用完 —— 很多服务商还有「滚动时间窗」限流"
+                     + "（比如 5 小时内用满，就得等窗口重置）。去控制台看「时间窗 / 5h 窗口」那一栏；"
+                     + "那一栏满了就只能等它重置，或者换个模型。\n"
+                     + "如果窗口也没满，那就是发得太快，稍等一会儿再发。",
                 >= 500 => $"服务商那边出错了（{code}），稍后再试。",
                 _ => $"服务商返回 HTTP {code}"
             };
+
+            // 服务商正文里往往写了真正的原因（比如 insufficient_quota = 额度用完），
+            // 带上它比只报个状态码有用得多
+            var detail = httpEx.Message ?? "";
+            if (!string.IsNullOrWhiteSpace(detail)
+                && !detail.StartsWith("HTTP ", StringComparison.Ordinal))
+                return baseMsg + "\n\n服务商原话：" + detail;
+
+            return baseMsg;
         }
 
         // ② 超时
@@ -836,6 +849,56 @@ InitializeComponent();
                  + "过一会儿重发试试；一直这样就检查网络，或换个接口地址。";
 
         return "网络连接失败：" + DescribeException(ex);
+    }
+
+    /// <summary>
+    /// 像 `EnsureSuccessStatusCode()` 一样，但**先把服务商的错误正文捞出来**再抛。
+    ///
+    /// 只报状态码用户没法排查：429 到底是"发太快"还是"额度用完"？403 是"没权限"还是"欠费"？
+    /// OpenAI 兼容接口会在正文里写清楚，比如
+    /// `{"error":{"message":"You exceeded your current quota…","code":"insufficient_quota"}}`。
+    /// 所以这里把正文抠出来塞进异常消息，最后会显示成「服务商原话：…」。
+    /// </summary>
+    private static async Task EnsureOkAsync(HttpResponseMessage resp)
+    {
+        if (resp.IsSuccessStatusCode) return;
+
+        int code = (int)resp.StatusCode;
+        string detail = "";
+        try { detail = await resp.Content.ReadAsStringAsync(); } catch { }
+
+        var msg = ExtractApiError(detail);
+        throw new HttpRequestException(
+            string.IsNullOrWhiteSpace(msg) ? $"HTTP {code}" : msg,
+            inner: null,
+            statusCode: resp.StatusCode);
+    }
+
+    /// <summary>从 OpenAI 兼容的错误正文里抠出 message / code（各家格式不完全一样，广撒网）。</summary>
+    private static string ExtractApiError(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return "";
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.Object)
+            {
+                var m = err.TryGetProperty("message", out var mv) ? (mv.GetString() ?? "") : "";
+                var c = err.TryGetProperty("code", out var cv) && cv.ValueKind == JsonValueKind.String
+                        ? (cv.GetString() ?? "") : "";
+                if (!string.IsNullOrWhiteSpace(m) && !string.IsNullOrWhiteSpace(c)) return $"{m}（{c}）";
+                if (!string.IsNullOrWhiteSpace(m)) return m;
+                if (!string.IsNullOrWhiteSpace(c)) return c;
+            }
+
+            if (root.TryGetProperty("message", out var m2) && m2.ValueKind == JsonValueKind.String)
+                return m2.GetString() ?? "";
+        }
+        catch { /* 不是 JSON 就当纯文本处理 */ }
+
+        return body.Length > 200 ? body[..200] : body;
     }
 
     /// <summary>
@@ -893,7 +956,7 @@ InitializeComponent();
         var content = new StringContent(json, Encoding.UTF8, "application/json");
         var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
                 var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
-        resp.EnsureSuccessStatusCode();
+        await EnsureOkAsync(resp);
 
         // 流式处理：实时显示，同时检测指令（{cmd:"..."} / {api:"..."} / {img:"..."} / {browse:"..."}）
         var sseResult = await ConsumeSseAsync(resp, aiBubble);
@@ -942,7 +1005,7 @@ InitializeComponent();
                 var continueContent = new StringContent(continueJson, Encoding.UTF8, "application/json");
                 var continueHttpReq = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = continueContent };
                 var continueResp = await _httpClient.SendAsync(continueHttpReq, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
-                continueResp.EnsureSuccessStatusCode();
+                await EnsureOkAsync(continueResp);
                 await ConsumeSseAsync(continueResp, aiBubble);
             }
         }
@@ -1015,7 +1078,7 @@ InitializeComponent();
             var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
                 var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
-            resp.EnsureSuccessStatusCode();
+            await EnsureOkAsync(resp);
             await ConsumeSseAsync(resp, aiBubble);
         }
         catch
@@ -1093,7 +1156,7 @@ InitializeComponent();
             var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
                 var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
-            resp.EnsureSuccessStatusCode();
+            await EnsureOkAsync(resp);
             await ConsumeSseAsync(resp, aiBubble);
         }
         catch (Exception ex)
@@ -1477,7 +1540,7 @@ InitializeComponent();
         var content = new StringContent(json, Encoding.UTF8, "application/json");
         var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
                 var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
-        resp.EnsureSuccessStatusCode();
+        await EnsureOkAsync(resp);
 
         using var stream = await resp.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
@@ -1681,7 +1744,7 @@ InitializeComponent();
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var resp = await _httpClient.SendAsync(req, cts.Token);
-        resp.EnsureSuccessStatusCode();
+        await EnsureOkAsync(resp);
         var json = await resp.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(json);
         return doc.RootElement.TryGetProperty("text", out var t) ? t.GetString() : null;
@@ -1786,7 +1849,7 @@ InitializeComponent();
             resp?.Dispose();
             await Task.Delay(2000 * (attempt + 1)); // 429 退避：2s, 4s, 6s
         }
-        resp.EnsureSuccessStatusCode();
+        await EnsureOkAsync(resp);
 
         // SSE 流式解析：累积所有 delta.content
         using var stream = await resp.Content.ReadAsStreamAsync();
@@ -1880,7 +1943,7 @@ InitializeComponent();
         var content = new StringContent(json, Encoding.UTF8, "application/json");
         var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
                 var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
-        resp.EnsureSuccessStatusCode();
+        await EnsureOkAsync(resp);
 
         using var stream = await resp.Content.ReadAsStreamAsync();
         using var reader = new StreamReader(stream);
@@ -2244,7 +2307,7 @@ InitializeComponent();
             var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             var req = new HttpRequestMessage(HttpMethod.Post, AppSettings.ApiUrl) { Content = content };
             var resp = await _httpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, CancellationToken.None);
-            resp.EnsureSuccessStatusCode();
+            await EnsureOkAsync(resp);
             await ConsumeSseAsync(resp, aiBubble);
         }
         catch

@@ -1,0 +1,48 @@
+bin/
+obj/
+.vs/
+*.user
+
+# ── 签名密钥：绝不入库（本仓库是公开的）──
+keystore/
+*.keystore
+*.jks
+
+# ── 构建产物 / SDK / 归档 ──
+apk/
+android-sdk/
+node_modules/
+
+# ── 工具目录 ──
+.workbuddy/
+.workbuddy-ai/
+.zcode/
+
+# ── 本地上传工具 / 临时文件（不上传）──
+_tok.txt
+_ghmcp.py
+_ghpush.py
+_ghclean.py
+build_log.txt
+.zcodeignore
+csproj/
+
+# ── 二进制资源（体积大，不上传）──
+*.png
+*.ttf
+*.pptx
+*.aar
+
+# ── 只传源码：文档 / 脚本 / 临时文件都不进仓库 ──
+*.md
+!README.md
+!更新公告*.md
+
+# 推广/临时工作目录：绝不上传（里面有抖音解析缓存、素材脚本等本地工作文件）
+promo_build/
+推广素材/
+*.ps1
+_*.py
+_*.txt
+*.log
+test_*

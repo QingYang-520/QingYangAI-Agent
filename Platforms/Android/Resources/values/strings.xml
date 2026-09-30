@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="qy_admin_desc">赋予青阳AI 设备管理器能力（高风险）：可锁定屏幕、清除数据等系统级操作。请仅在信任时启用。</string>
+    <string name="qy_a11y_desc">青阳AI 使用无障碍能力仅用于读取通知栏的新消息（微信等），以便在后台感知并关心你。本应用不会执行任何点击、滑动等操作。</string>
+</resources>

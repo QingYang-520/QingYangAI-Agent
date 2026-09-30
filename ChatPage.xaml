@@ -365,13 +365,17 @@
             </HorizontalStackLayout>
         </Grid>
 
-        <!-- 权限面板：点盾牌图标弹出（稍大气泡，含互斥单选 + 独立复选） -->
+        <!-- 权限面板：点盾牌图标弹出。贴在输入栏上方上弹（bottom 76 = 输入栏底边距 14 + 高 56 + 间隙 6）；
+             这里的高度上限只是初始值，实际由 ChatPage.xaml.cs 的 OnSizeAllocated 按页高动态夹取，
+             避免横屏 / 矮视口下面板顶出屏幕 -->
         <Border x:Name="permPanel" IsVisible="False"
-                HorizontalOptions="End" VerticalOptions="Start"
-                Margin="0,52,12,0"
+                HorizontalOptions="End" VerticalOptions="End"
+                Margin="0,0,12,76"
+                MaximumHeightRequest="440"
                 BackgroundColor="#20202B" StrokeThickness="1" Stroke="#3A3A4A"
                 StrokeShape="RoundRectangle 14" Padding="14,12"
                 WidthRequest="266">
+            <ScrollView>
             <VerticalStackLayout Spacing="8">
                 <Label Text="文件访问权限" FontSize="14" FontAttributes="Bold" TextColor="White"/>
                 <Label Text="四选一，下面的可单独勾选" FontSize="11" TextColor="#9E8D8C"/>
@@ -473,6 +477,7 @@
 
                 <Label x:Name="lblPermSummary" Text="" FontSize="11" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
             </VerticalStackLayout>
+            </ScrollView>
         </Border>
 
         <!-- 输入框区域（胶囊样式：背景全透明，外面透出内容） -->

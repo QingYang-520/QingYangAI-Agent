@@ -834,6 +834,20 @@ public partial class SettingsPage : ContentPage
         }
     }
 
+    /// <summary>点进「关于应用」页（版本号 / 开发人 / 版权说明）。</summary>
+    private async void OnAboutTapped(object? sender, EventArgs e)
+    {
+        try
+        {
+            await Navigation.PushAsync(new AboutPage());
+        }
+        catch (Exception ex)
+        {
+            // 同协议页：没有 NavigationPage 时给个人话，别闪退
+            await DisplayAlert("打不开关于页", ex.Message, "好");
+        }
+    }
+
     /// <summary>刷新「Agent 循环」说明文字。</summary>
     private void UpdateAgentLoopDesc(bool on) =>
         lblAgentLoopDesc.Text = on

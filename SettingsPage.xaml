@@ -686,12 +686,15 @@
                     </VerticalStackLayout>
                 </Border>
 
-                <!-- 关于：版本号 + 项目地址 -->
+                <!-- 关于应用：点进去看版本 / 开发人 / 版权 -->
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="2">
-                        <Label Text="关于青阳AI" FontSize="15" FontAttributes="Bold" TextColor="White"/>
+                        <VerticalStackLayout.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnAboutTapped"/>
+                        </VerticalStackLayout.GestureRecognizers>
+                        <Label Text="关于应用 ›" FontSize="15" FontAttributes="Bold" TextColor="White"/>
                         <Label x:Name="lblAppVersion" Text="" FontSize="12" TextColor="#9E8D8C"/>
-                        <Label Text="一个能感知手机状态的 Android AI 伴侣。开源于 GitHub，MIT 协议。"
+                        <Label Text="版本号、开发人与版权说明，点进去随时可查。"
                                FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
                     </VerticalStackLayout>
                 </Border>

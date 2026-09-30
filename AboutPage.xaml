@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="青阳AI.AboutPage"
+             Title="关于应用">
+    <ScrollView>
+        <VerticalStackLayout Padding="24,30" Spacing="6">
+
+            <!-- 应用标识：圆角气泡 + 「青」字（项目无可用图片资源，用文字最稳） -->
+            <Border WidthRequest="84" HeightRequest="84"
+                    StrokeThickness="0" StrokeShape="RoundRectangle 24"
+                    BackgroundColor="#2F2928" HorizontalOptions="Center">
+                <Label Text="青" FontSize="40" FontAttributes="Bold"
+                       TextColor="#FBB5B2"
+                       HorizontalOptions="Center" VerticalOptions="Center"/>
+            </Border>
+
+            <Label Text="青阳AI" FontSize="22" FontAttributes="Bold"
+                   TextColor="White" HorizontalOptions="Center" Margin="0,10,0,0"/>
+            <!-- 版本号由代码动态填充（AppInfo），升版本自动跟上 -->
+            <Label x:Name="lblVersion" Text="" FontSize="13"
+                   TextColor="#9E8D8C" HorizontalOptions="Center"/>
+
+            <BoxView HeightRequest="1" Color="#2F2928" Margin="0,18"/>
+
+            <!-- 开发人 -->
+            <Label Text="开发人" FontSize="12" TextColor="#9E8D8C"/>
+            <Label Text="青阳" FontSize="15" TextColor="White" Margin="0,0,0,12"/>
+
+            <!-- 版权说明：年份由代码动态填充（DateTime.Now.Year），跨年无需改代码 -->
+            <Label Text="版权说明" FontSize="12" TextColor="#9E8D8C"/>
+            <Label x:Name="lblCopyright" Text="" FontSize="14" TextColor="#D5C2C1"
+                   LineBreakMode="WordWrap"/>
+
+            <BoxView HeightRequest="1" Color="#2F2928" Margin="0,18"/>
+
+            <Label Text="一个能感知手机状态的 Android AI 伴侣。"
+                   FontSize="12.5" TextColor="#9E8D8C" HorizontalOptions="Center"/>
+            <Label Text="开源于 GitHub，MIT 协议。"
+                   FontSize="12.5" TextColor="#9E8D8C" HorizontalOptions="Center"/>
+
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

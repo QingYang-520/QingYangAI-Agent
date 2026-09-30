@@ -273,6 +273,22 @@ InitializeComponent();
         ApplyThemeColor();
     }
 
+    /// <summary>
+    /// 按实际页高给权限面板夹一个高度上限。
+    /// 面板固定在输入栏上方（bottom margin 76）；若不夹上限，横屏 / 矮视口下
+    /// 面板顶边会跑到屏幕外，连内部 ScrollView 都够不到。
+    /// </summary>
+    protected override void OnSizeAllocated(double width, double height)
+    {
+        base.OnSizeAllocated(width, height);
+        if (height <= 0) return;
+
+        // 让出底部 76（输入栏底边距 14 + 高 56 + 间隙 6）与顶部标题栏约 52，再留 12 余量
+        var max = Math.Max(180, height - 140);
+        if (Math.Abs(permPanel.MaximumHeightRequest - max) > 0.5)
+            permPanel.MaximumHeightRequest = max;
+    }
+
     protected override async void OnAppearing()
     {
         base.OnAppearing();

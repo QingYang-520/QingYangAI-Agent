@@ -30,20 +30,27 @@ public partial class AboutPage : ContentPage
         lblCopyright.Text = $"Copyright © {DateTime.Now.Year} 青阳AI All Rights Reserved";
     }
 
-    /// <summary>点「联系我们」：复制 Instagram 账号并提示（不依赖网络/梯子，最稳）。</summary>
-    private async void OnContactTapped(object? sender, EventArgs e)
+    /// <summary>点「联系我们」的某一行：复制对应账号（不依赖网络/梯子，最稳）。
+    /// CommandParameter 格式为「平台|账号」。</summary>
+    private async void OnContactTapped(object? sender, TappedEventArgs e)
     {
-        const string handle = "Qingyang_520";
+        var raw = e.Parameter as string ?? "";
+        var parts = raw.Split('|', 2);
+        if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[1])) return;
+
+        var platform = parts[0];
+        var account = parts[1];
+
         try
         {
-            await Clipboard.Default.SetTextAsync(handle);
-            await DisplayAlert("Instagram 账号已复制",
-                               handle + "\n\n去 Instagram 搜这个账号就能找到我。", "好");
+            await Clipboard.Default.SetTextAsync(account);
+            await DisplayAlert($"{platform} 账号已复制",
+                               account + "\n\n去 " + platform + " 搜这个账号就能找到我。", "好");
         }
         catch
         {
             // 剪贴板不可用时至少给个人话，别让用户点了没反应
-            await DisplayAlert("联系方式", "Instagram：" + handle, "好");
+            await DisplayAlert("联系方式", platform + "：" + account, "好");
         }
     }
 

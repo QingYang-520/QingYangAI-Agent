@@ -46,17 +46,41 @@
 
             <BoxView HeightRequest="1" Color="#2F2928" Margin="0,18"/>
 
-            <!-- 联系我们：点一下复制 Instagram 账号 -->
+            <!-- 联系我们：点任意一行复制对应账号 -->
             <Border BackgroundColor="#181211" StrokeThickness="0"
                     StrokeShape="RoundRectangle 14" Padding="14,12">
-                <VerticalStackLayout Spacing="3">
-                    <VerticalStackLayout.GestureRecognizers>
-                        <TapGestureRecognizer Tapped="OnContactTapped"/>
-                    </VerticalStackLayout.GestureRecognizers>
-                    <Label Text="联系我们 ›" FontSize="15" FontAttributes="Bold" TextColor="White"/>
-                    <Label Text="Instagram：Qingyang_520" FontSize="13" TextColor="#D5C2C1"/>
-                    <Label Text="点一下复制账号，去 Instagram 搜我。"
-                           FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+                <VerticalStackLayout Spacing="12">
+                    <VerticalStackLayout Spacing="2">
+                        <Label Text="联系我们" FontSize="15" FontAttributes="Bold" TextColor="White"/>
+                        <Label Text="点一下任意一行，复制对应账号。" FontSize="12" TextColor="#9E8D8C"/>
+                    </VerticalStackLayout>
+
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnContactTapped" CommandParameter="Instagram|qingyang_520"/>
+                        </Grid.GestureRecognizers>
+                        <Label Text="Instagram" FontSize="13.5" TextColor="#D5C2C1" VerticalOptions="Center"/>
+                        <Label Grid.Column="1" Text="qingyang_520" FontSize="13.5" TextColor="#FBB5B2"
+                               HorizontalOptions="End" VerticalOptions="Center"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnContactTapped" CommandParameter="Telegram|@QingYang_520"/>
+                        </Grid.GestureRecognizers>
+                        <Label Text="Telegram" FontSize="13.5" TextColor="#D5C2C1" VerticalOptions="Center"/>
+                        <Label Grid.Column="1" Text="@QingYang_520" FontSize="13.5" TextColor="#FBB5B2"
+                               HorizontalOptions="End" VerticalOptions="Center"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <Grid.GestureRecognizers>
+                            <TapGestureRecognizer Tapped="OnContactTapped" CommandParameter="抖音|com.qingyang.ai"/>
+                        </Grid.GestureRecognizers>
+                        <Label Text="抖音" FontSize="13.5" TextColor="#D5C2C1" VerticalOptions="Center"/>
+                        <Label Grid.Column="1" Text="com.qingyang.ai" FontSize="13.5" TextColor="#FBB5B2"
+                               HorizontalOptions="End" VerticalOptions="Center"/>
+                    </Grid>
                 </VerticalStackLayout>
             </Border>
 

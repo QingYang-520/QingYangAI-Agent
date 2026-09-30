@@ -69,12 +69,12 @@
 
                     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
                         <Grid.GestureRecognizers>
-                            <TapGestureRecognizer Tapped="OnContactTapped" CommandParameter="Telegram|@QingYang_520"/>
+                            <TapGestureRecognizer Tapped="OnContactTapped" CommandParameter="Telegram|QingYang_520"/>
                         </Grid.GestureRecognizers>
                         <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
                             <Label Text="Telegram" FontSize="13.5" TextColor="#D5C2C1" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
-                        <Label Grid.Column="1" Text="@QingYang_520" FontSize="13.5" TextColor="#FBB5B2"
+                        <Label Grid.Column="1" Text="QingYang_520" FontSize="13.5" TextColor="#FBB5B2"
                                HorizontalOptions="End" VerticalOptions="Center"/>
                     </Grid>
 

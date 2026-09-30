@@ -807,7 +807,7 @@ public partial class SettingsPage : ContentPage
             "全走系统接口，不用 Root）\n\n" +
             "其他：Agent 自主执行、文生图带实时预览、语音、记忆、日记。\n" +
             "API Key 只存本机，没有中转服务器，不上传任何数据。\n\n" +
-            (string.IsNullOrEmpty(ver) ? "" : $"我装的是 v{ver}。"));
+            (string.IsNullOrEmpty(ver) ? "" : $"我装的是 v{ver}。");
 
         try
         {

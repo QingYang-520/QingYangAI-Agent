@@ -30,6 +30,23 @@ public partial class AboutPage : ContentPage
         lblCopyright.Text = $"Copyright © {DateTime.Now.Year} 青阳AI All Rights Reserved";
     }
 
+    /// <summary>点「联系我们」：复制 Instagram 账号并提示（不依赖网络/梯子，最稳）。</summary>
+    private async void OnContactTapped(object? sender, EventArgs e)
+    {
+        const string handle = "Qingyang_520";
+        try
+        {
+            await Clipboard.Default.SetTextAsync(handle);
+            await DisplayAlert("Instagram 账号已复制",
+                               handle + "\n\n去 Instagram 搜这个账号就能找到我。", "好");
+        }
+        catch
+        {
+            // 剪贴板不可用时至少给个人话，别让用户点了没反应
+            await DisplayAlert("联系方式", "Instagram：" + handle, "好");
+        }
+    }
+
     /// <summary>当前平台名。用条件编译，零额外依赖。</summary>
     private static string PlatformName
     {

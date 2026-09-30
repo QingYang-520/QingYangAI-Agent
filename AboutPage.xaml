@@ -6,13 +6,18 @@
     <ScrollView>
         <VerticalStackLayout Padding="24,30" Spacing="6">
 
-            <!-- 应用标识：圆角气泡 + 「青」字（项目无可用图片资源，用文字最稳） -->
+            <!-- 应用图标：AppIcon 的缩放版（Resources/Images/applogo.png，512×512）。
+                 原图是方形且无 alpha 通道，而 MAUI 的 Border 不会裁剪子元素，
+                 所以圆角必须靠 Image.Clip 实现 —— 只设 Border 的 StrokeShape 是没用的 -->
             <Border WidthRequest="84" HeightRequest="84"
                     StrokeThickness="0" StrokeShape="RoundRectangle 24"
                     BackgroundColor="#2F2928" HorizontalOptions="Center">
-                <Label Text="青" FontSize="40" FontAttributes="Bold"
-                       TextColor="#FBB5B2"
-                       HorizontalOptions="Center" VerticalOptions="Center"/>
+                <Image Source="applogo.png" Aspect="AspectFill"
+                       WidthRequest="84" HeightRequest="84">
+                    <Image.Clip>
+                        <RoundRectangleGeometry CornerRadius="24" Rect="0,0,84,84"/>
+                    </Image.Clip>
+                </Image>
             </Border>
 
             <Label Text="青阳AI" FontSize="22" FontAttributes="Bold"
@@ -38,6 +43,22 @@
                    FontSize="12.5" TextColor="#9E8D8C" HorizontalOptions="Center"/>
             <Label Text="开源于 GitHub，MIT 协议。"
                    FontSize="12.5" TextColor="#9E8D8C" HorizontalOptions="Center"/>
+
+            <BoxView HeightRequest="1" Color="#2F2928" Margin="0,18"/>
+
+            <!-- 联系我们：点一下复制 Instagram 账号 -->
+            <Border BackgroundColor="#181211" StrokeThickness="0"
+                    StrokeShape="RoundRectangle 14" Padding="14,12">
+                <VerticalStackLayout Spacing="3">
+                    <VerticalStackLayout.GestureRecognizers>
+                        <TapGestureRecognizer Tapped="OnContactTapped"/>
+                    </VerticalStackLayout.GestureRecognizers>
+                    <Label Text="联系我们 ›" FontSize="15" FontAttributes="Bold" TextColor="White"/>
+                    <Label Text="Instagram：Qingyang_520" FontSize="13" TextColor="#D5C2C1"/>
+                    <Label Text="点一下复制账号，去 Instagram 搜我。"
+                           FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
+                </VerticalStackLayout>
+            </Border>
 
         </VerticalStackLayout>
     </ScrollView>

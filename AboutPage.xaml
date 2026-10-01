@@ -63,7 +63,7 @@
                         <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
                             <Label Text="Instagram" FontSize="13.5" TextColor="#D5C2C1" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
-                        <Label Grid.Column="1" Text="qingyang_520" FontSize="13.5" TextColor="#FBB5B2"
+                        <Label Grid.Column="1" Text="qingyang_520" FontSize="13.5" TextColor="#FBB5B2" StyleId="theme"
                                HorizontalOptions="End" VerticalOptions="Center"/>
                     </Grid>
 
@@ -74,7 +74,7 @@
                         <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
                             <Label Text="Telegram" FontSize="13.5" TextColor="#D5C2C1" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
-                        <Label Grid.Column="1" Text="QingYang_520" FontSize="13.5" TextColor="#FBB5B2"
+                        <Label Grid.Column="1" Text="QingYang_520" FontSize="13.5" TextColor="#FBB5B2" StyleId="theme"
                                HorizontalOptions="End" VerticalOptions="Center"/>
                     </Grid>
 
@@ -85,7 +85,7 @@
                         <HorizontalStackLayout Spacing="10" VerticalOptions="Center">
                             <Label Text="抖音" FontSize="13.5" TextColor="#D5C2C1" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
-                        <Label Grid.Column="1" Text="com.qingyang.ai" FontSize="13.5" TextColor="#FBB5B2"
+                        <Label Grid.Column="1" Text="com.qingyang.ai" FontSize="13.5" TextColor="#FBB5B2" StyleId="theme"
                                HorizontalOptions="End" VerticalOptions="Center"/>
                     </Grid>
                 </VerticalStackLayout>

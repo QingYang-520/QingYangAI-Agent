@@ -19,7 +19,7 @@
                Text="💗 已陪伴 1 天"
                FontSize="13"
                FontAttributes="Bold"
-               TextColor="#FBB5B2"
+               TextColor="#FBB5B2" StyleId="theme"
                Margin="16,10,16,0"/>
 
         <!-- 日记列表：按日期倒序，一天一篇 -->
@@ -43,12 +43,12 @@
                         </Border.Shadow>
                         <Grid ColumnDefinitions="4,*">
                             <!-- 左侧彩色竖条 -->
-                            <BoxView Grid.Column="0" Color="#FBB5B2"/>
+                            <BoxView Grid.Column="0" Color="#FBB5B2" StyleId="theme"/>
                             <VerticalStackLayout Grid.Column="1" Spacing="6" Padding="14,12">
                                 <HorizontalStackLayout Spacing="8">
                                     <Label Text="📖" FontSize="14"/>
                                     <Label Text="{Binding Date}"
-                                           TextColor="#C4B5FD"
+                                           TextColor="#C4B5FD" StyleId="theme"
                                            FontSize="13"
                                            FontAttributes="Bold"/>
                                 </HorizontalStackLayout>

@@ -14,6 +14,7 @@ public partial class IntroPage : ContentPage
     {
         InitializeComponent();
         webIntro.Navigating += OnNavigating;
+        ThemeManager.Apply(this);   // 应用当前主题色
         _ = LoadAsync();
     }
 

@@ -38,12 +38,26 @@ public partial class QuickStartPage : ContentPage
     protected override void OnAppearing()
     {
         base.OnAppearing();
+        ThemeManager.Apply(this);   // 应用当前主题色（含主按钮等）
+        ThemeManager.ThemeChanged -= OnThemeChanged;   // 先退订，避免重复订阅
+        ThemeManager.ThemeChanged += OnThemeChanged;
+    }
+
+    /// <summary>主题色变化：步骤进度条与人设气泡边框是代码动态上色的，需要重跑一次。</summary>
+    private void OnThemeChanged()
+    {
         try
         {
-            // 主按钮跟随主题色（默认紫），与设置页风格一致
-            btnNext.BackgroundColor = AppSettings.ThemeColor;
+            UpdateStepUi();
+            ApplyPersonaMode(_usePreset, animate: false);
         }
-        catch { }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[QuickStart OnThemeChanged] {ex.Message}"); }
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        ThemeManager.ThemeChanged -= OnThemeChanged;   // 退订，避免内存泄漏
     }
 
     /// <summary>Android 返回键：第二步退回第一步。</summary>
@@ -63,8 +77,9 @@ public partial class QuickStartPage : ContentPage
     {
         bool first = _step == 1;
         lblStep.Text = first ? "第 1 / 2 步 · 接上一个模型就能聊" : "第 2 / 2 步 · 挑一个你喜欢的人设";
-        barStep1.BackgroundColor = first ? Color.FromArgb("#FBB5B2") : Color.FromArgb("#3A3333");
-        barStep2.BackgroundColor = first ? Color.FromArgb("#3A3333") : Color.FromArgb("#FBB5B2");
+        var accent = AppSettings.ThemeColor;
+        barStep1.BackgroundColor = first ? accent : Color.FromArgb("#3A3333");
+        barStep2.BackgroundColor = first ? Color.FromArgb("#3A3333") : accent;
         btnPrev.IsVisible = !first;
         btnNext.Text = first ? "下一步" : "开始聊天";
     }
@@ -372,8 +387,8 @@ public partial class QuickStartPage : ContentPage
         qsLblPersonaSub.Text = usePreset ? " > 青阳官方预设" : " > 自定义";
         qsLblPersonaSub.IsVisible = true;
 
-        qsBubblePreset.Stroke = usePreset ? Color.FromArgb("#7B68EE") : Color.FromArgb("#555555");
-        qsBubbleCustom.Stroke = usePreset ? Color.FromArgb("#555555") : Color.FromArgb("#7B68EE");
+        qsBubblePreset.Stroke = usePreset ? AppSettings.ThemeColor : Color.FromArgb("#555555");
+        qsBubbleCustom.Stroke = usePreset ? Color.FromArgb("#555555") : AppSettings.ThemeColor;
         qsLblPreset.TextColor = usePreset ? Colors.White : Color.FromArgb("#AAAAAA");
         qsLblCustom.TextColor = usePreset ? Color.FromArgb("#AAAAAA") : Colors.White;
 

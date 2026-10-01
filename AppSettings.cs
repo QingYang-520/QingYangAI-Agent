@@ -797,17 +797,24 @@ public static class AppSettings
     /// <summary>把 hex 字符串转成 Color（异常时回退到默认紫色）。</summary>
     public static Color ThemeColor => TryParseHexColor(ThemeColorHex) ? Color.Parse(ThemeColorHex) : Color.Parse(DefaultThemeColor);
 
-    /// <summary>简单 hex 格式校验（#RRGGBB 或 #RRGGBBAA）。</summary>
+    /// <summary>
+    /// 严格 hex 颜色校验：接受 #RRGGBB / #RRGGBBAA / RRGGBB / RRGGBBAA，其余一律 false。
+    /// （旧实现用 Uri.TryCreate 判断，对 "B388FF" 这类裸串恒为 true，等于只查长度，
+    ///   非法色串会漏过去并在 Color.Parse 抛异常 —— 已改为逐字符校验。）
+    /// </summary>
     private static bool TryParseHexColor(string hex)
     {
-        try
+        if (string.IsNullOrWhiteSpace(hex)) return false;
+        var s = hex.Trim().TrimStart('#');
+        if (s.Length != 6 && s.Length != 8) return false;
+        foreach (var ch in s)
         {
-            if (string.IsNullOrEmpty(hex)) return false;
-            var s = hex.Trim().TrimStart('#');
-            if (s.Length != 6 && s.Length != 8) return false;
-            return Uri.TryCreate(s, UriKind.Absolute, out _) || int.TryParse(s, out _);
+            var isHex = (ch >= '0' && ch <= '9')
+                     || (ch >= 'a' && ch <= 'f')
+                     || (ch >= 'A' && ch <= 'F');
+            if (!isHex) return false;
         }
-        catch { return false; }
+        return true;
     }
 
     public static string AiName

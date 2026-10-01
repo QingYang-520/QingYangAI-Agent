@@ -32,7 +32,7 @@
                     Text="下载"
                     FontSize="14"
                     TextColor="White"
-                    BackgroundColor="#7B68EE"
+                    BackgroundColor="#7B68EE" StyleId="theme"
                     Padding="14,6"
                     Clicked="OnDownloadClicked"/>
         </Grid>

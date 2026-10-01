@@ -34,7 +34,7 @@
 
             <!-- ══════════ 🎨 主题色 ══════════ -->
             <VerticalStackLayout Spacing="10">
-                <Label Text="🎨 主题色" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="🎨 主题色" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="10">
@@ -48,7 +48,7 @@
             <!-- ══════════ 🧩 模型与配置 ══════════ -->
             <VerticalStackLayout Spacing="10">
 
-                <Label Text="🧩 模型与配置" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="🧩 模型与配置" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <!-- 配置套 Tab -->
                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
@@ -265,7 +265,7 @@
                             <Label Text="音色（voice）" FontSize="13" FontAttributes="Bold" TextColor="White"/>
                             <Entry x:Name="entTtsVoice" Placeholder="alloy / echo / nova …（按接口支持的音色名填写）" PlaceholderColor="#9E8D8C" BackgroundColor="#2F2928" TextColor="White"/>
                             <HorizontalStackLayout Spacing="10">
-                                <Switch x:Name="swTtsAutoPlay"/>
+                                <Switch x:Name="swTtsAutoPlay" StyleId="theme"/>
                                 <Label Text="收到回复后自动朗读" TextColor="#D5C2C1" VerticalOptions="Center"/>
                             </HorizontalStackLayout>
                         </VerticalStackLayout>
@@ -276,7 +276,7 @@
 
             <!-- ══════════ 💬 Ta的人设 ══════════ -->
             <VerticalStackLayout Spacing="10">
-                <Label Text="💬 Ta的人设" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="💬 Ta的人设" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="12">
@@ -321,14 +321,14 @@
 
             <!-- ══════════ ⚙️ 对话行为 ══════════ -->
             <VerticalStackLayout Spacing="10">
-                <Label Text="⚙️ 对话行为" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="⚙️ 对话行为" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="12">
 
                         <!-- 强制思考 -->
                         <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="swForceThink" Toggled="OnForceThinkToggled"/>
+                            <Switch x:Name="swForceThink" Toggled="OnForceThinkToggled" StyleId="theme"/>
                             <Label Text="强制思考" TextColor="White" FontAttributes="Bold" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
                         <Label x:Name="lblForceThink"
@@ -343,7 +343,7 @@
 
                         <!-- 自动上下文压缩 -->
                         <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="swAutoCompress" Toggled="OnAutoCompressToggled"/>
+                            <Switch x:Name="swAutoCompress" Toggled="OnAutoCompressToggled" StyleId="theme"/>
                             <Label Text="自动上下文压缩" TextColor="White" FontAttributes="Bold" VerticalOptions="Center"/>
                             <Label x:Name="lblAutoCompressDesc" Text="禁用" TextColor="#D5C2C1" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
@@ -358,13 +358,13 @@
 
             <!-- ══════════ 🔁 Agent 循环执行模式 ══════════ -->
             <VerticalStackLayout Spacing="10">
-                <Label Text="🔁 Agent 循环执行模式" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="🔁 Agent 循环执行模式" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="12">
 
                         <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="swAgentLoop" Toggled="OnAgentLoopToggled"/>
+                            <Switch x:Name="swAgentLoop" Toggled="OnAgentLoopToggled" StyleId="theme"/>
                             <Label Text="开启 Agent 循环" TextColor="White" FontAttributes="Bold" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
                         <Label x:Name="lblAgentLoopDesc" Text="关闭：一次问答一个来回"
@@ -406,13 +406,13 @@
 
             <!-- ══════════ 💗 主动关心 ══════════ -->
             <VerticalStackLayout Spacing="10">
-                <Label Text="💗 主动关心" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="💗 主动关心" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="10">
 
                         <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="swCare" Toggled="OnCareToggled"/>
+                            <Switch x:Name="swCare" Toggled="OnCareToggled" StyleId="theme"/>
                             <Label x:Name="lblCareDesc" Text="关闭：Ta不会主动找你" TextColor="#D5C2C1" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
 
@@ -435,7 +435,7 @@
                         <BoxView HeightRequest="1" Color="#2F2928"/>
                         <Label Text="生活感知：Ta能看到什么" FontSize="14" FontAttributes="Bold" TextColor="White"/>
                         <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="swCareSense"/>
+                            <Switch x:Name="swCareSense" StyleId="theme"/>
                             <Label Text="允许Ta感知我的生活（优先系统API，无需Shizuku）" TextColor="#D5C2C1" VerticalOptions="Center" FontSize="13"/>
                         </HorizontalStackLayout>
 
@@ -462,12 +462,12 @@
 
             <!-- ══════════ 🧠 每条消息 AI 必看 ══════════ -->
             <VerticalStackLayout Spacing="10">
-                <Label Text="🧠 每条消息 AI 必看" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="🧠 每条消息 AI 必看" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="10">
                         <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="swReviewEach" Toggled="OnReviewEachToggled"/>
+                            <Switch x:Name="swReviewEach" Toggled="OnReviewEachToggled" StyleId="theme"/>
                             <Label x:Name="lblReviewDesc" Text="关闭" TextColor="#9E8D8C" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
 
@@ -485,13 +485,13 @@
 
             <!-- ══════════ 🌐 AI 浏览器 ══════════ -->
             <VerticalStackLayout Spacing="10">
-                <Label Text="🌐 AI 浏览器" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="🌐 AI 浏览器" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="10">
 
                         <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="swAiBrowser" Toggled="OnAiBrowserToggled"/>
+                            <Switch x:Name="swAiBrowser" Toggled="OnAiBrowserToggled" StyleId="theme"/>
                             <Label x:Name="lblAiBrowserDesc" Text="开启" TextColor="#9E8D8C" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
                         <Label Text="开启后 Ta 能真的用浏览器：跑 JS 渲染的页面、点按钮、翻页、填表单、登录。关掉就只剩「读静态网页」那点能力（{browse:}）。"
@@ -500,14 +500,14 @@
                         <BoxView HeightRequest="1" Color="#2F2928"/>
 
                         <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="swSaveCookies" Toggled="OnSaveCookiesToggled"/>
+                            <Switch x:Name="swSaveCookies" Toggled="OnSaveCookiesToggled" StyleId="theme"/>
                             <Label x:Name="lblSaveCookiesDesc" Text="保存 Cookie" TextColor="#9E8D8C" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
                         <Label Text="开着 = 保留登录态，Ta 下次访问同一个网站还是登录着的；关掉 = 每次都当新访客，不记任何登录信息。"
                                FontSize="12" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
 
                         <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="swLoadImages" Toggled="OnLoadImagesToggled"/>
+                            <Switch x:Name="swLoadImages" Toggled="OnLoadImagesToggled" StyleId="theme"/>
                             <Label x:Name="lblLoadImagesDesc" Text="加载图片" TextColor="#9E8D8C" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
                         <Label Text="关掉省流量（Ta 主要读文字）。但有些网站的懒加载靠图片触发，读不出内容时把它打开。"
@@ -541,7 +541,7 @@
                                FontSize="11" TextColor="#9E8D8C" LineBreakMode="WordWrap"/>
 
                         <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="swManagedHttp" Toggled="OnManagedHttpToggled"/>
+                            <Switch x:Name="swManagedHttp" Toggled="OnManagedHttpToggled" StyleId="theme"/>
                             <Label x:Name="lblManagedHttpDesc" Text="流式兼容模式" TextColor="#9E8D8C" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
                         <Label Text="开了就换用纯托管的 HTTP 栈（绕开手机原生网络栈）。有些 ROM 会把响应偷偷缓冲起来、导致回复整段蹦出来，开这个多半能好。改完要重启 App 才生效。"
@@ -559,11 +559,11 @@
 
             <!-- ══════════ 🧠 记忆与形象 ══════════ -->
             <VerticalStackLayout Spacing="10">
-                <Label Text="🧠 记忆与形象" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="🧠 记忆与形象" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="12">
-                        <Label x:Name="lblCompanionDays" Text="💗 已陪伴 1 天" FontSize="14" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                        <Label x:Name="lblCompanionDays" Text="💗 已陪伴 1 天" FontSize="14" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                         <VerticalStackLayout Spacing="2">
                             <VerticalStackLayout.GestureRecognizers>
@@ -585,7 +585,7 @@
 
             <!-- ══════════ 🗄 备份与恢复 ══════════ -->
             <VerticalStackLayout Spacing="10">
-                <Label Text="🗄 备份与恢复" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="🗄 备份与恢复" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="10">
@@ -602,14 +602,14 @@
             <!-- ══════════ 🦾 Super Admin（高风险） ══════════ -->
             <VerticalStackLayout Spacing="10">
                 <HorizontalStackLayout Spacing="8">
-                    <Label Text="🦾 Super Admin" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                    <Label Text="🦾 Super Admin" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
                     <Label Text="⚠️ 高风险" FontSize="13" FontAttributes="Bold" TextColor="#F2B8B5" VerticalOptions="Center"/>
                 </HorizontalStackLayout>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="10">
                         <HorizontalStackLayout Spacing="10">
-                            <Switch x:Name="swSuperAdmin" Toggled="OnSuperAdminToggled"/>
+                            <Switch x:Name="swSuperAdmin" Toggled="OnSuperAdminToggled" StyleId="theme"/>
                             <Label x:Name="lblSuperAdminState" Text="关闭" TextColor="#9E8D8C" VerticalOptions="Center"/>
                         </HorizontalStackLayout>
 
@@ -641,7 +641,7 @@
 
             <!-- ══════════ 🛠 Shizuku ══════════ -->
             <VerticalStackLayout Spacing="10">
-                <Label Text="🛠 Shizuku（深度操作）" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="🛠 Shizuku（深度操作）" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="10">
@@ -660,7 +660,7 @@
 
             <!-- ══════════ 📄 关于与协议 ══════════ -->
             <VerticalStackLayout Spacing="10">
-                <Label Text="📄 关于与协议" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                <Label Text="📄 关于与协议" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                 <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                     <VerticalStackLayout Spacing="2">
@@ -701,7 +701,6 @@
             </VerticalStackLayout>
 
             <!-- 保存 -->
-            <Button x:Name="btnSave" Text="保存设置" BackgroundColor="#FBB5B2" Clicked="OnSaveClicked" CornerRadius="12"/>
             <Button x:Name="btnClearChat" Text="清空聊天数据" BackgroundColor="#B0413E" TextColor="White" Clicked="OnClearChatClicked" CornerRadius="12"/>
 
         </VerticalStackLayout>

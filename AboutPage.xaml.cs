@@ -10,6 +10,7 @@ public partial class AboutPage : ContentPage
     {
         InitializeComponent();
         RefreshInfo();
+        ThemeManager.Apply(this);   // 应用当前主题色
     }
 
     /// <summary>刷新版本号与版权年份。</summary>

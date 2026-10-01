@@ -23,11 +23,11 @@
         <!-- 底部同意栏：只读模式会被整块隐藏 -->
         <VerticalStackLayout Grid.Row="3" x:Name="consentBar" Spacing="10">
             <HorizontalStackLayout Spacing="8">
-                <CheckBox x:Name="chkAgree" Color="#FBB5B2"/>
+                <CheckBox x:Name="chkAgree" Color="#FBB5B2" StyleId="theme"/>
                 <Label Text="我已经阅读并同意以上全部条款" VerticalOptions="Center"
                        TextColor="#E9E1E0" FontSize="14"/>
             </HorizontalStackLayout>
-            <Button x:Name="btnConfirm" Text="同意并继续" Clicked="OnAgreeClicked"/>
+            <Button x:Name="btnConfirm" Text="同意并继续" StyleId="theme" Clicked="OnAgreeClicked"/>
         </VerticalStackLayout>
     </Grid>
 </ContentPage>

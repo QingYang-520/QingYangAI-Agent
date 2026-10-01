@@ -27,6 +27,7 @@ public partial class AgreementPage : ContentPage
         _mode = mode;
         InitializeComponent();
         ApplyMode();
+        ThemeManager.Apply(this);   // 应用当前主题色
     }
 
     /// <summary>按模式摆好界面：渲染全文、决定底部栏显示什么。</summary>
@@ -48,7 +49,6 @@ public partial class AgreementPage : ContentPage
             btnConfirm.Text = "同意并继续";
         }
 
-        try { btnConfirm.BackgroundColor = AppSettings.ThemeColor; } catch { }
     }
 
     private async void OnAgreeClicked(object sender, EventArgs e)

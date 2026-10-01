@@ -41,7 +41,7 @@
                         </Border.Shadow>
                         <Grid ColumnDefinitions="4,*" ColumnSpacing="0">
                             <!-- 左侧紫色竖条 -->
-                            <BoxView Grid.Column="0" Color="#FBB5B2"/>
+                            <BoxView Grid.Column="0" Color="#FBB5B2" StyleId="theme"/>
                             <VerticalStackLayout Grid.Column="1" Spacing="5" Padding="14,12">
                                 <Label Text="{Binding Content}"
                                        TextColor="#EDEDED"

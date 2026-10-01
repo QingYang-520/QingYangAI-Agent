@@ -15,6 +15,7 @@ public partial class ImagePreviewPage : ContentPage
         InitializeComponent();
         _source = source;
         imgPreview.Source = source;
+        ThemeManager.Apply(this);   // 应用当前主题色
     }
 
     /// <summary>左上角返回按钮：回到聊天画面。</summary>

@@ -217,7 +217,7 @@
             <ScrollView x:Name="stepPersona" IsVisible="False" Opacity="0">
                 <VerticalStackLayout Padding="16,8,16,8" Spacing="10">
 
-                    <Label Text="💬 Ta的人设" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2"/>
+                    <Label Text="💬 Ta的人设" FontSize="17" FontAttributes="Bold" TextColor="#FBB5B2" StyleId="theme"/>
 
                     <Border BackgroundColor="#181211" StrokeThickness="0" StrokeShape="RoundRectangle 14" Padding="14,12">
                         <VerticalStackLayout Spacing="12">
@@ -277,7 +277,7 @@
                     BackgroundColor="#3A3333" TextColor="White" CornerRadius="12"
                     IsVisible="False" Clicked="OnPrevClicked"/>
             <Button x:Name="btnNext" Grid.Column="3" Text="下一步" FontSize="14" Padding="24,8"
-                    BackgroundColor="#FBB5B2" TextColor="#181211" CornerRadius="12" Clicked="OnNextClicked"/>
+                    BackgroundColor="#FBB5B2" TextColor="#181211" CornerRadius="12" StyleId="theme" Clicked="OnNextClicked"/>
         </Grid>
 
     </Grid>

@@ -209,12 +209,12 @@
                                                     VerticalOptions="Center">
                                                 <VerticalStackLayout Spacing="7">
                                                     <ActivityIndicator IsRunning="{Binding IsImageLoading}"
-                                                                       Color="#FBB5B2"
+                                                                       Color="#FBB5B2" StyleId="theme"
                                                                        HorizontalOptions="Center"/>
                                                     <!-- 进度：后端返回了才有这一行 -->
                                                     <Label Text="{Binding ImageProgressNote}"
                                                            IsVisible="{Binding ShowImageProgress}"
-                                                           TextColor="#FBB5B2"
+                                                           TextColor="#FBB5B2" StyleId="theme"
                                                            FontSize="13"
                                                            HorizontalOptions="Center"/>
                                                     <!-- 后端明确不给预览时的小字提示 -->
@@ -336,7 +336,7 @@
                         <TapGestureRecognizer Tapped="OnReasoningChipTapped"/>
                     </Border.GestureRecognizers>
                     <Label x:Name="reasonLbl" Text="思考:关"
-                           TextColor="#FBB5B2" FontSize="12" VerticalOptions="Center"/>
+                           TextColor="#FBB5B2" StyleId="theme" FontSize="12" VerticalOptions="Center"/>
                 </Border>
                 <!-- 上下文（发消息后由 UsageStats 刷新） -->
                 <Label x:Name="lblCtx" Text="上下文" FontSize="11"
@@ -386,7 +386,7 @@
                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                         <Label x:Name="icoReadWs" Text="📄" FontSize="14" VerticalOptions="Center"/>
                         <Label Grid.Column="1" Text="仅读取工作区文件" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
-                        <Label x:Name="chkReadWs" Grid.Column="2" Text="○" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                        <Label x:Name="chkReadWs" Grid.Column="2" Text="○" TextColor="#B388FF" StyleId="theme" FontSize="14" VerticalOptions="Center"/>
                         <Grid.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnPermLevelTapped" CommandParameter="1"/>
                         </Grid.GestureRecognizers>
@@ -395,7 +395,7 @@
                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                         <Label x:Name="icoWriteWs" Text="✏️" FontSize="14" VerticalOptions="Center"/>
                         <Label Grid.Column="1" Text="仅修改工作区文件" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
-                        <Label x:Name="chkWriteWs" Grid.Column="2" Text="○" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                        <Label x:Name="chkWriteWs" Grid.Column="2" Text="○" TextColor="#B388FF" StyleId="theme" FontSize="14" VerticalOptions="Center"/>
                         <Grid.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnPermLevelTapped" CommandParameter="2"/>
                         </Grid.GestureRecognizers>
@@ -410,7 +410,7 @@
                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                         <Label Text="💾" FontSize="14" VerticalOptions="Center"/>
                         <Label Grid.Column="1" Text="读取全盘文件" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
-                        <Label x:Name="chkReadDisk" Grid.Column="2" Text="○" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                        <Label x:Name="chkReadDisk" Grid.Column="2" Text="○" TextColor="#B388FF" StyleId="theme" FontSize="14" VerticalOptions="Center"/>
                         <Grid.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnPermLevelTapped" CommandParameter="3"/>
                         </Grid.GestureRecognizers>
@@ -419,7 +419,7 @@
                     <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                         <Label Text="🖊" FontSize="14" VerticalOptions="Center"/>
                         <Label Grid.Column="1" Text="修改全盘文件" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
-                        <Label x:Name="chkWriteDisk" Grid.Column="2" Text="○" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                        <Label x:Name="chkWriteDisk" Grid.Column="2" Text="○" TextColor="#B388FF" StyleId="theme" FontSize="14" VerticalOptions="Center"/>
                         <Grid.GestureRecognizers>
                             <TapGestureRecognizer Tapped="OnPermLevelTapped" CommandParameter="4"/>
                         </Grid.GestureRecognizers>
@@ -433,7 +433,7 @@
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                     <Label Text="🌐" FontSize="14" VerticalOptions="Center"/>
                     <Label Grid.Column="1" Text="允许 AI 联网（浏览 + 下载文件）" TextColor="#D5C2C1" FontSize="13" VerticalOptions="Center"/>
-                    <Label x:Name="chkBrowser" Grid.Column="2" Text="☐" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                    <Label x:Name="chkBrowser" Grid.Column="2" Text="☐" TextColor="#B388FF" StyleId="theme" FontSize="14" VerticalOptions="Center"/>
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Tapped="OnPermBrowserTapped"/>
                     </Grid.GestureRecognizers>
@@ -442,7 +442,7 @@
                 <Grid x:Name="rowFullAccess" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                     <Label Text="🔓" FontSize="14" VerticalOptions="Center"/>
                     <Label Grid.Column="1" Text="完全访问（放开全部限制）" TextColor="#F2B8B5" FontSize="13" VerticalOptions="Center"/>
-                    <Label x:Name="chkFullAccess" Grid.Column="2" Text="☐" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                    <Label x:Name="chkFullAccess" Grid.Column="2" Text="☐" TextColor="#B388FF" StyleId="theme" FontSize="14" VerticalOptions="Center"/>
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Tapped="OnPermFullAccessTapped"/>
                     </Grid.GestureRecognizers>
@@ -469,7 +469,7 @@
                 <Grid x:Name="rowExport" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
                     <Label Text="📤" FontSize="14" VerticalOptions="Center"/>
                     <Label Grid.Column="1" Text="导出工作区到 Download" TextColor="#B9D5C4" FontSize="13" VerticalOptions="Center"/>
-                    <Label x:Name="chkExport" Grid.Column="2" Text="›" TextColor="#B388FF" FontSize="14" VerticalOptions="Center"/>
+                    <Label x:Name="chkExport" Grid.Column="2" Text="›" TextColor="#B388FF" StyleId="theme" FontSize="14" VerticalOptions="Center"/>
                     <Grid.GestureRecognizers>
                         <TapGestureRecognizer Tapped="OnExportWorkspaceTapped"/>
                     </Grid.GestureRecognizers>
@@ -523,7 +523,7 @@
                 <Button x:Name="btnSend"
                         Grid.Column="3"
                         Text="发送"
-                        StyleId="btnSend"
+                        StyleId="theme"
                         BackgroundColor="#FBB5B2"
                         CornerRadius="20"
                         WidthRequest="64"

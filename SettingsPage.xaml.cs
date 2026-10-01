@@ -25,6 +25,9 @@ public partial class SettingsPage : ContentPage
     /// <summary>二次方 ease-out 曲线：先快后慢。</summary>
     private static readonly Easing QuadraticEaseOut = new(t => 1 - (1 - t) * (1 - t));
 
+    /// <summary>是否已完成首次加载。防止 OnDisappearing 早于 OnAppearing 时把未回显的默认值写回。</summary>
+    private bool _uiReady;
+
     public SettingsPage()
     {
         InitializeComponent();
@@ -38,6 +41,7 @@ public partial class SettingsPage : ContentPage
         base.OnAppearing();
         try
         {
+            _uiReady = true;   // UI 已按设置回显，之后才允许离页保存
             UpdateShizukuStatus();
             UpdateSensingStatus();
             UpdateSuperAdminState();
@@ -45,6 +49,9 @@ public partial class SettingsPage : ContentPage
             UpdateStreamDiagLabel(); // 聊天页刚发过消息，顺手把流式诊断刷新一下
             UpdateAgreementVersionLabel();
             UpdateAppVersionLabel();
+            ThemeManager.Apply(this);   // 应用当前主题色并登记，之后换色自动跟随
+            ThemeManager.ThemeChanged -= OnThemeChanged;   // 先退订，避免重复订阅
+            ThemeManager.ThemeChanged += OnThemeChanged;
             _ = UpdateMemoryCountAsync();
             _ = UpdateCompanionLabelAsync();
             // 每次打开设置页都检测连通状态；延迟到导航动画结束后异步执行，避免卡顿
@@ -970,39 +977,8 @@ public partial class SettingsPage : ContentPage
     {
         AppSettings.ThemeColorHex = hex;
         BuildThemeColorPicker(); // 重建以更新选中状态
-        ApplyThemeColor();
+        ThemeManager.NotifyChanged();  // 刷新所有已登记页面（含本页）
         await DisplayAlert("主题色", $"已切换为「{name}」", "好");
-    }
-
-    /// <summary>把当前主题色应用到设置页的关键元素。</summary>
-    private void ApplyThemeColor()
-    {
-        var theme = AppSettings.ThemeColor;
-        var oldColor = Color.Parse("#FBB5B2");
-        // 所有 #FBB5B2 的标题、按钮、图标
-        ApplyThemeToVisualTree(this, theme, oldColor);
-    }
-
-    /// <summary>递归遍历可视树，把 oldColor 替换成 theme。</summary>
-    private static void ApplyThemeToVisualTree(VisualElement element, Color theme, Color oldColor)
-    {
-        if (element is Label lbl && lbl.TextColor == oldColor) lbl.TextColor = theme;
-        if (element is Button btn && btn.BackgroundColor == oldColor) btn.BackgroundColor = theme;
-        if (element is Border bd)
-        {
-            if (bd.Stroke is SolidColorBrush sb && sb.Color == oldColor) bd.Stroke = new SolidColorBrush(theme);
-            if (bd.BackgroundColor == oldColor) bd.BackgroundColor = theme;
-        }
-        if (element is MorphIcon mi && mi.IconColor == oldColor) mi.IconColor = theme;
-
-        if (element is Layout layout)
-        {
-            foreach (var child in layout.Children)
-            {
-                if (child is VisualElement ve)
-                    ApplyThemeToVisualTree(ve, theme, oldColor);
-            }
-        }
     }
 
     /// <summary>每条消息 AI 必看 开关切换。</summary>
@@ -1133,8 +1109,8 @@ public partial class SettingsPage : ContentPage
         lblPersonaSub.IsVisible = true;
 
         // 两个小气泡选中态边框/文字色
-        bubblePreset.Stroke = usePreset ? Color.FromArgb("#7B68EE") : Color.FromArgb("#555555");
-        bubbleCustom.Stroke = usePreset ? Color.FromArgb("#555555") : Color.FromArgb("#7B68EE");
+        bubblePreset.Stroke = usePreset ? AppSettings.ThemeColor : Color.FromArgb("#555555");
+        bubbleCustom.Stroke = usePreset ? Color.FromArgb("#555555") : AppSettings.ThemeColor;
         lblPreset.TextColor = usePreset ? Colors.White : Color.FromArgb("#AAAAAA");
         lblCustom.TextColor = usePreset ? Color.FromArgb("#AAAAAA") : Colors.White;
 
@@ -1640,7 +1616,11 @@ public partial class SettingsPage : ContentPage
         return (levels.Count > 0, levels);
     }
 
-    private async void OnSaveClicked(object? sender, EventArgs e)
+    /// <summary>
+    /// 把当前 UI 上的全部设置写入持久化。无弹窗、全同步 —— 供「离开设置页时自动保存」调用。
+    /// 注意：多数开关在切换时就已即时落盘，这里主要兜住文本输入类字段（人设、路径、时间等）。
+    /// </summary>
+    private void CommitSettings()
     {
         SaveModelConfigFromUi();   // 把当前 UI 的模型配置保存到当前激活的配置套
 
@@ -1668,8 +1648,31 @@ public partial class SettingsPage : ContentPage
         // AgentLoopEnabled / AgentTimeLimitLevel 在切换时即时生效，这里保存工作区目录
         AppSettings.WorkspacePath = entWorkspace.Text?.Trim() ?? "";
         UpdateWorkspaceHint();
+    }
 
-        await DisplayAlert("已保存", "设置已生效", "确定");
+    /// <summary>
+    /// 离开设置页时自动保存全部设置（替代原底部「保存设置」按钮）。
+    /// PopAsync / 系统返回键 / 页面被覆盖都会触发；进程被强杀时不会（此时多数开关已在切换时落盘）。
+    /// </summary>
+    /// <summary>主题色变化：把靠代码动态上色、没有被 StyleId 标记覆盖的控件也刷新一遍。</summary>
+    private void OnThemeChanged()
+    {
+        try
+        {
+            UpdateTabHighlight(AppSettings.ActiveModelConfig);   // 配置 Tab 选中态
+            ApplyPersonaMode(_usePreset, animate: false);        // 人设气泡选中态边框
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Settings OnThemeChanged] {ex.Message}"); }
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        ThemeManager.ThemeChanged -= OnThemeChanged;
+        // 页面还没回显过设置（OnAppearing 未跑）→ 不保存，否则会把默认值写回去
+        if (!_uiReady) return;
+        try { CommitSettings(); }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"[Settings OnDisappearing] {ex.Message}"); }
     }
 
     /// <summary>解析 HH:mm 时间为当日分钟数。</summary>
@@ -1791,15 +1794,16 @@ public partial class SettingsPage : ContentPage
         entTtsVoice.Text = AppSettings.TtsVoice;
     }
 
-    /// <summary>Tab 高亮：当前配置紫色，其它灰色。</summary>
+    /// <summary>Tab 高亮：当前配置跟随主题色，其它灰色。</summary>
     private void UpdateTabHighlight(int active)
     {
         var tabs = new[] { tabConfig1, tabConfig2, tabConfig3 };
         var labels = new[] { lblTab1, lblTab2, lblTab3 };
+        var accent = AppSettings.ThemeColor;   // 跟随主题色（原先硬编码紫色，导致换色不生效）
         for (int i = 0; i < tabs.Length; i++)
         {
             bool on = i == active;
-            tabs[i].BackgroundColor = on ? Color.FromArgb("#7B68EE") : Color.FromArgb("#3C3C3C");
+            tabs[i].BackgroundColor = on ? accent : Color.FromArgb("#3C3C3C");
             labels[i].TextColor = on ? Colors.White : Color.FromArgb("#AAAAAA");
             labels[i].FontAttributes = on ? FontAttributes.Bold : FontAttributes.None;
         }

@@ -270,7 +270,7 @@ InitializeComponent();
         });
         UpdateMoodUi();
         UpdateReasoningChip();
-        ApplyThemeColor();
+        ThemeManager.Apply(this);
     }
 
     /// <summary>
@@ -310,7 +310,7 @@ InitializeComponent();
             UpdateCacheHitLabel();
             UpdateMoodUi();
             UpdateReasoningChip();
-            ApplyThemeColor();
+            ThemeManager.Apply(this);
 
             // 从系统设置回来后重新校验存储权限（用户可能刚授予、也可能收回了）
             await RevalidateStoragePermissionAsync();
@@ -398,7 +398,8 @@ InitializeComponent();
             _observedContext = CareWatch.BuildObservedContext();
             UpdateMoodUi();
             UpdateReasoningChip();
-            ApplyThemeColor();
+            // 主题色刷新必须回 UI 线程（这里是后台线程）
+            Dispatcher.Dispatch(() => ThemeManager.Apply(this));
         });
 #endif
     }
@@ -503,37 +504,6 @@ InitializeComponent();
         var key = AppSettings.ApiKey.Trim();
         if (!string.IsNullOrEmpty(key))
             _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {key}");
-    }
-
-    /// <summary>把当前主题色应用到聊天页的关键元素。</summary>
-    private void ApplyThemeColor()
-    {
-        var theme = AppSettings.ThemeColor;
-        var oldColor = Color.Parse("#FBB5B2");
-        ApplyThemeToVisualTree(this, theme, oldColor);
-    }
-
-/// <summary>递归遍历可视树，把 oldColor 替换成 theme。聊天气泡与输入栏内部组件固定原色不跟主题。</summary>
-    private static void ApplyThemeToVisualTree(VisualElement element, Color theme, Color oldColor)
-    {
-        if (element is Border iBar && iBar.StyleId == "输入栏跳过") return;
-        if (element is Label lbl && lbl.TextColor == oldColor && lbl.StyleId != "btnSend") lbl.TextColor = theme;
-        if (element is Button btn && btn.BackgroundColor == oldColor && btn.StyleId != "btnSend") btn.BackgroundColor = theme;
-        if (element is Border bd && bd.BackgroundColor == oldColor && bd.StyleId != "chatBubble") bd.BackgroundColor = theme;
-        if (element is MorphIcon mi && mi.IconColor == oldColor) mi.IconColor = theme;
-        // 转圈指示器也要跟主题色（以前漏了）
-        if (element is ActivityIndicator ai && ai.Color == oldColor) ai.Color = theme;
-        // 注：DotMotionLoader 是 GraphicsView，不在这个遍历里 ——
-        //     它自己每帧直读 AppSettings.ThemeColor，换主题立刻生效（比遍历更实时）。
-
-        if (element is Layout layout)
-        {
-            foreach (var child in layout.Children)
-            {
-                if (child is VisualElement ve)
-                    ApplyThemeToVisualTree(ve, theme, oldColor);
-            }
-        }
     }
 
     private async void OnSettingsClicked(object? sender, EventArgs e)

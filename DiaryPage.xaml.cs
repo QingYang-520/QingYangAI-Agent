@@ -8,6 +8,7 @@ public partial class DiaryPage : ContentPage
     public DiaryPage()
     {
         InitializeComponent();
+        ThemeManager.Apply(this);   // 应用当前主题色
         _ = LoadAsync();
     }
 

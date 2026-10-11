@@ -1,8 +1,8 @@
 <div align="center">
 
-# 青阳AI
+# QingYangAI-Agent
 
-**一个真的能"看见"你手机状态的 Android AI 伴侣**
+**一个真的能"看见"你手机状态的 Android AI**
 
 不是又一个套壳聊天框。Ta 会主动查你现在在用什么 App、手机还剩多少电、昨天屏幕用了多久，
 然后据此跟你说话 —— 而不是等你问。
